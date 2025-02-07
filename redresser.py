@@ -2,76 +2,89 @@ from pipe_manager import SD15PipelineManager
 from redresser_utils import *
 
 
-class Redresser:
+class RedresserSettings:
     SEGMENT_FASHION = 0
     SEGMENT_PERSON = 1
-    SEGMENT_ALL = 2 # this is just replacing the whole image; use keep_face or keep_hands to preserve something
+    SEGMENT_ALL = 2 # replaces whole image unless keep_face or keep_hands is True
 
+    # why are these here? FOR CONVENIENCE
     xseg_model_path="C:/Users/teckt/xseg/models/saved_model"
     face_model_path="yolov8n-face.pt"
     person_model_path="person_yolov8m-seg.pt"
     fashion_model_path="deepfashion2_yolov8s-seg.pt"
     hand_model_path="hand_yolov9c.pt"
 
-    def __init__(self, 
-                 segment_type=0,
-                 keep_face=True,
-                 keep_hands=False,
-                 use_faceswap=False):
+    def __init__(self):
+        self.SEGMENT_ID = RedresserSettings.SEGMENT_FASHION
+        self.keep_hands = False
+        self.keep_face = True 
+        self.use_faceswap = False
+        self.max_side = 1280
+        self.center_crop = False
+        self.seed = -1
+
+        self.prompt = "A girl in a red dress"
+        self.negative_prompt = "bad quality"
+        self.num_inference_steps = 20
+        self.guidance_scale = 7.5
+        self.strength = None
+        self.clip_skip = 0
         
-        self.pipe_manager = SD15PipelineManager(local_files_only=True)
-        self.segment_type = segment_type
-        self.keep_hands = keep_hands
-        self.keep_face = keep_face
-        
-        
+
+class Redresser:
+
+    def __init__(self, local_files_only=True):
+        # builds face segmentation model (Tensorflow)
+        self.xseg_model = build_seg_model(resolution=(256, 256), load=True, save_path=RedresserSettings.xseg_model_path)
+        # builds face detection model from YOLO (PyTorch)
+        self.face_extract_model = YOLO(RedresserSettings.face_model_path)
+        # initialize default settings first
+        self.settings = RedresserSettings()
+        # initialize the sd pipeline
+        self.pipe_manager = SD15PipelineManager(local_files_only=local_files_only)
 
     def set_seg_models(self,):
         '''
         loads the models for face seg, face detect, fashion/person seg, hand seg
         '''
-        if self.segment_type not in [0, 1]:
-            print("segment_type does not exist:", self.segment_type)
+        if self.settings.SEGMENT_ID not in [RedresserSettings.SEGMENT_FASHION, RedresserSettings.SEGMENT_PERSON, RedresserSettings.SEGMENT_ALL]:
+            print("segment_type does not exist:", self.settings.SEGMENT_ID)
             assert False
 
-        # builds face segmentation model (Tensorflow)
-        self.xseg_model = build_seg_model(resolution=(256, 256), load=True, save_path=Redresser.xseg_model_path)
-        # builds face detection model from YOLO (PyTorch)
-        self.face_extract_model = YOLO(Redresser.face_model_path)
-
         # segments images; black fill
-        if self.segment_type == Redresser.SEGMENT_PERSON:
-            self.f_seg_model = YOLO(hf_hub_download("Bingsu/adetailer", Redresser.person_model_path))
-        if self.segment_type == Redresser.SEGMENT_FASHION:
-            self.f_seg_model = YOLO(hf_hub_download("Bingsu/adetailer", Redresser.fashion_model_path))
+        if self.settings.SEGMENT_ID == RedresserSettings.SEGMENT_PERSON:
+            self.f_seg_model = YOLO(hf_hub_download("Bingsu/adetailer", RedresserSettings.person_model_path))
+        elif self.settings.SEGMENT_ID == RedresserSettings.SEGMENT_FASHION:
+            self.f_seg_model = YOLO(hf_hub_download("Bingsu/adetailer", RedresserSettings.fashion_model_path))
+        else:
+            print("Segment not implemented", self.settings.SEGMENT_ID)
+            assert False
+
         if self.keep_hands:
-            self.hand_seg_model = YOLO(hf_hub_download("Bingsu/adetailer", Redresser.hand_model_path))
+            self.hand_seg_model = YOLO(hf_hub_download("Bingsu/adetailer", RedresserSettings.hand_model_path))
         
-    def run(self, image_path, 
-            settings:dict={
-                    "max_side":1280, 
-                    "center_crop": False,
-                    "seed": -1
-                }
-            ):
+    def run(self, image_path, settings={}):
         '''
-        settings(dict): pass to pipe_manager.apply_settings
-            -defaults
+        settings(dict): run with redresser and pipe settings
+            -default pipe settings (will only update these keys if you have them)
             "mode": SD15PipelineManager.USE_IMAGE (0),
             "use_LCM": True, # only used for video pipe
             "scheduler": "EulerAncestralDiscreteScheduler",
             "use_inpaint_control_net": True,
             "control_net_id": 'openpose'
+            -default redresser settings
         '''
         batch_size = 1 # since we're not doing video, just process 1 image
 
+        # update settings
         self.pipe_manager.apply_settings(settings)
         self.pipe_manager.set_pipeline()
         self.set_seg_models()
 
         batch_frames, orig_imgs, seg_imgs, control_images_inpaint, control_images_p, yolo_results, image_resize_params \
-            = self.prepare_inputs(image_path, settings)
+            = self.prepare_inputs(image_path, self.settings.max_side, self.settings.center_crop)
         
+        seed = self.settings.seed
         if seed is None or seed < 0:
             seed = int(time.time())
 
@@ -79,43 +92,49 @@ class Redresser:
         generator = torch.Generator().manual_seed(seed)
 
         args = dict(
-            prompt=prompt,
+            prompt=self.settings.prompt,
             
-            num_inference_steps=num_inference_steps,
+            num_inference_steps=self.settings.num_inference_steps,
             
             image=orig_imgs,
             mask_image=seg_imgs,
 
-            guidance_scale=guidance_scale,
+            guidance_scale=self.settings.guidance_scale,
             height=image_resize_params.new_h,
             width=image_resize_params.new_w
         )
         if self.pipe_manager.pipe_settings.get("use_inpaint_control_net", True):
-            args["control_image"] = control_images_p
+            args["control_image"] = [control_images_inpaint, control_images_p]
         else:
             args["image"] = control_images_p
 
-        if negative_prompt is not None:
-            args["negative_prompt"] = negative_prompt
-        if strength is not None:
-                args["strength"] = strength
-        if clip_skip > 0:
-            args["clip_skip"] = clip_skip
+        if self.settings.negative_prompt is not None:
+            args["negative_prompt"] = self.settings.negative_prompt
+        if self.settings.strength is not None:
+            args["strength"] = self.settings.strength
+        if self.settings.clip_skip > 0:
+            args["clip_skip"] = self.settings.clip_skip
         if generator is not None:
             args["generator"] = generator
-
-        
 
         with torch.inference_mode():
             output = self.pipeline(
                 **args
             )
 
-        output_frames = output.images
+        final_pil_images = self.process_outputs(output.images, yolo_results)
+
+        time_id = time.time()
+
+        for image_idx, image in enumerate(final_pil_images):
+            print("image_idx", image_idx, "image", image, image.info)
+            image.save(f"{time_id}_{str(image_idx).zfill(5)}.png")
+
+    def process_outputs(self, outputs, yolo_results):
         final_pil_images = []
         final_cv2_images = []
 
-        for image_idx, image in enumerate(output_frames):
+        for image_idx, image in enumerate(outputs):
 
             np_image = np.array(image)
 
@@ -141,21 +160,15 @@ class Redresser:
 
             image = Image.fromarray(cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)).convert('RGB')
             final_pil_images.append(image)
+        
+        return final_pil_images
 
-            
-
-        time_id = time.time()
-
-        for image_idx, image in enumerate(final_pil_images):
-            print("image_idx", image_idx, "image", image, image.info)
-            image.save(f"{time_id}_{str(image_idx).zfill(5)}.png")
-
-    def prepare_inputs(self, image_path, settings):
+    def prepare_inputs(self, image_path, max_side, center_crop):
         source_image = Image.open(image_path).convert('RGB')
         w = source_image.width
         h = source_image.height
         image_resize_params = ImageResizeParams(
-            h=h, w=w, max_side=settings["max_side"], center_crop=settings["center_crop"])
+            h=h, w=w, max_side=max_side, center_crop=center_crop)
         frame = image_resize_params.apply_params(frame)
 
         print(f"processing image batch({0}) at {image_path}")
