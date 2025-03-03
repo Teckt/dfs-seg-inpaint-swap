@@ -166,11 +166,11 @@ class RedresserSettings:
     fashion_model_path = "deepfashion2_yolov8s-seg.pt"  # downloads from Bingsu/adetailer
     hand_model_path = "hand_yolov9c.pt"  # downloads from Bingsu/adetailer
     default_options = {
-        "prompt": "jjk",
-        "image": "bo/more",
+        "prompt": "",
+        "image": "bo.png",
         # "mask": "seg/00000.png",
-        "guidance_scale": 30.0,
-        "num_inference_steps": 30,
+        "guidance_scale": 3.5,
+        "num_inference_steps": 8,
         # "negative_prompt": None,
         # "strength": None,
         # "clip_skip": 0,
@@ -563,7 +563,8 @@ class SocketServer:
 
         client, _ = self.server.accept()
 
-        data = client.recv(4096)  # Receive serialized object
+        data = client.recv(4096*2)  # Receive serialized object
+        print(f"{self.__class__.__name__} {self.port} received object")
         if use_pickle:
             obj = pickle.loads(data)  # Deserialize
         else:
@@ -584,5 +585,6 @@ class SocketClient:
         self.client.connect(("localhost", self.port))
         if use_pickle:
             data = pickle.dumps(data)
+        print(f"{self.__class__.__name__} {self.port} sending object")
         self.client.send(data)
         self.client.close()

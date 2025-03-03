@@ -6,7 +6,7 @@ from multiprocessing import Queue, Process
 from redresser_utils import SocketServer, SocketClient
 from redresser_flux import Redresser, ImageGenerator
 from redresser_sd15 import RedresserSD15, ImageGeneratorSD15
-
+from redresser_utils import RedresserSettings
 # from iae_firestore_functions import FirestoreFunctions
 
 
@@ -134,7 +134,7 @@ class RepaintJobProcesser:
                 time.sleep(5)
 
 
-def redresser_flux_process(r, r_input_queue, r_output_queue):
+def redresser_flux_process(r, is_server, r_input_queue, r_output_queue):
 
     pipe_map = {"flux": 0, "flux-fill": 1, "sd15": 2, "sd15-fill": 3}
     img_client = SocketClient(5000 + pipe_map[r])
@@ -150,36 +150,39 @@ def redresser_flux_process(r, r_input_queue, r_output_queue):
             continue
         # load pipeline here to test imgage processor
         if pipeline is None:
-            pipeline = get_pipeline(r)
-
-        if options is None:
-            pipeline.settings.set_options()
+            pipeline = get_pipeline(r, is_server)
 
         result = run_redresser_flux_process(
-            pipeline=pipeline, options=pipeline.settings,
+            pipeline=pipeline, options=options,
             img_client=img_client, pipe_server=pipe_server)
 
         r_output_queue.put(result, block=True)
 
 
-def get_pipeline(r):
+def get_pipeline(r, is_server):
     _r = r
     if r == "flux-fill":
-        r = Redresser(is_server=True)
+        r = Redresser(is_server=is_server)
     elif r == "sd15-fill":
-        r = RedresserSD15(is_server=True)
+        r = RedresserSD15(is_server=is_server)
     elif r == "flux":
-        r = ImageGenerator(is_server=True)
+        r = ImageGenerator(is_server=is_server)
     elif r == "sd15":
-        r = ImageGeneratorSD15(is_server=True)
+        r = ImageGeneratorSD15(is_server=is_server)
 
     return r
 
 
 def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_client:SocketClient):
     # determine which pipeline to load
-    pipeline.settings.map_dfs_options(options)
-    print("mapped settings", pipeline.settings.options)
+    if pipeline.is_server:
+        pipeline.settings.map_dfs_options(options)
+        print("mapped settings", pipeline.settings.options)
+    else:
+        pipeline.settings.options = options.copy()
+        print("passed settings", pipeline.settings.options)
+
+
     # pass options to image processor
     if isinstance(pipeline, Redresser):
         print("passing settings to image processor")
@@ -210,6 +213,7 @@ def run(r="flux", is_server=True):
         target=redresser_flux_process,
         kwargs={
             "r": r,
+            "is_server": is_server,
             "r_input_queue": r_input_queue,
             "r_output_queue": r_output_queue,})
 
@@ -302,11 +306,13 @@ def run(r="flux", is_server=True):
                 print("sleeping 5...")
                 time.sleep(5)
     else:
+        settings = RedresserSettings()
         while True:
-            r_input_queue.put(None)
+            settings.set_options()
+            r_input_queue.put(settings.options.copy())
 
             result = r_output_queue.get(block=True)
 
 
 if __name__ == "__main__":
-    run("sd15", is_server=False)
+    run("flux", is_server=False)

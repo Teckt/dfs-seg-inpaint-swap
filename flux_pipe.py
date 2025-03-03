@@ -12,6 +12,8 @@ from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
 from transformers import BitsAndBytesConfig as BitsAndBytesConfig
 
 from optimum_quanto.optimum.quanto import freeze, qfloat8, quantize
+from optimum_quanto.optimum.quanto import QuantizedTransformersModel
+
 
 # from yolomodel.redresser.flux_controlnet_inpainting.transformer_flux import FluxTransformer2DModel as FluxTransformer2DModel_alimama
 # from yolomodel.redresser.flux_controlnet_inpainting.controlnet_flux import FluxControlNetModel
@@ -75,15 +77,24 @@ class MyFluxPipe:
                     # "C:\\Users\\teckt\\.cache\\huggingface\\hub\\models--Kijai--flux-fp8\\snapshots\\e77f550e3fe8be226884d5944a40abdbe4735ff5\\flux1-dev-fp8.safetensors",
                     # self.flux_model_name,
                     subfolder="transformer",
-                    torch_dtype=self.dtype, local_files_only=True)
+                    torch_dtype=self.dtype, local_files_only=True) if not fill else \
+                    \
+                    FluxTransformer2DModel.from_pretrained(
+                        #     self.flux_model_name,
+                        self.flux_model_name,
+                        subfolder="transformer",
+                        torch_dtype=self.dtype, local_files_only=True)
+
                 progress_bar.update()
-                progress_bar.set_description(f"quantizing flux_transformer to qfloat8")
-                if not fill:
-                    quantize(self.flux_transformer, weights=qfloat8)
+                # progress_bar.set_description(f"quantizing flux_transformer to qfloat8")
+
+                # if not fill:
+
+                # quantize(self.flux_transformer, weights=qfloat8)
                 progress_bar.update()
-                progress_bar.set_description(f"freezing flux_transformer")
-                if not fill:
-                    freeze(self.flux_transformer)
+                # progress_bar.set_description(f"freezing flux_transformer")
+                # if not fill:
+                # freeze(self.flux_transformer)
                 progress_bar.update()
 
                 # self.flux_transformer.to(self.dtype)
@@ -95,25 +106,27 @@ class MyFluxPipe:
                     subfolder="text_encoder_2",
                     torch_dtype=self.dtype, local_files_only=True)
                 progress_bar.update()
-                progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
-                if not fill:
-                    quantize(self.text_encoder_2, weights=qfloat8)
+                # progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
+                # if not fill:
+                #     quantize(self.text_encoder_2, weights=qfloat8)
                 progress_bar.update()
-                progress_bar.set_description("freezing text_encoder_2")
-                if not fill:
-                    freeze(self.text_encoder_2)
+                # progress_bar.set_description("freezing text_encoder_2")
+                # if not fill:
+                #     freeze(self.text_encoder_2)
                 progress_bar.update()
         if fill:
+            print("loading pipeline")
             self.pipe = FluxFillPipeline.from_pretrained(
                 "black-forest-labs/FLUX.1-Fill-dev",
                 # tokenizer=self.clip_L_tokenizer,
-                transformer=self.flux_transformer,
+                transformer=None,
                 text_encoder=self.clip_L_text_encoder,
-                text_encoder_2=self.text_encoder_2,
+                text_encoder_2=None,
                 # vae=self.flux_vae,
-                torch_dtype=torch.float16,
+                torch_dtype=self.dtype,
                 local_files_only=True
             )
+
         else:
             # load this pipeline to get the tokenizers
             # self.pipe = FluxFillPipeline.from_pretrained(
@@ -128,6 +141,15 @@ class MyFluxPipe:
             # )
             # load main pipe and transfer tokenizers to it
             print("loading pipeline")
+            # load VAE
+            # with tqdm(range(1), "Loading flux_vae"):
+            #     self.flux_vae = AutoencoderKL.from_single_file(
+            #         # self.flux_model_name, subfolder="vae",
+            #         "C:/Users/teckt/.cache/huggingface/hub/models--black-forest-labs--FLUX.1-dev/snapshots/0ef5fff789c832c5c7f4e127f94c8b54bbcced44/ae.safetensors",
+            #
+            #         torch_dtype=self.dtype, local_files_only=True)
+            #     # self.flux_vae.to(self.dtype)
+
             self.pipe = FluxPipeline.from_pretrained(
                 "black-forest-labs/FLUX.1-dev",
                 transformer=None,
@@ -139,18 +161,19 @@ class MyFluxPipe:
                 local_files_only=True
             )
 
-            print("adding transformer")
-            self.pipe.transformer = self.flux_transformer
-            print("adding t5 encoder")
-            self.pipe.text_encoder_2 = self.text_encoder_2
+        print("adding transformer")
+        self.pipe.transformer = self.flux_transformer
+        print("adding t5 encoder")
+        self.pipe.text_encoder_2 = self.text_encoder_2
 
         # self.load_loras()
 
         # with tqdm(range(1), "Casting to float16"):
         #     self.pipe.to(torch.float16)
         # self.pipe.enable_free_noise_split_inference()
-
+        # self.pipe.enable_sequential_cpu_offload()
         self.pipe.enable_model_cpu_offload()
+        # self.pipe.to("cuda")
         self.pipe.vae.enable_slicing()
         self.pipe.vae.enable_tiling()
 
@@ -178,6 +201,7 @@ class MyFluxPipe:
         # self.pipe.fuse_lora()
 
     def apply_flux_loras_with_prompt(self, prompt, use_turbo=False):
+        use_turbo = False
         self.loaded_loras = {}
         self.pipe.unload_lora_weights()
         if use_turbo:
@@ -189,7 +213,7 @@ class MyFluxPipe:
             print("no loras detected in prompt. setting adapters:", active_adapters)
             return filtered_prompt
 
-        return filtered_prompt
+        # return filtered_prompt
 
         loras_filtered_names = {}
         # filter the names for periods or will throw an error when loading the lora
