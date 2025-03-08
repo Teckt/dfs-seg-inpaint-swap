@@ -1,0 +1,9 @@
+opencv-python
+accelerate
+git+https://github.com/huggingface/diffusers.git
+git+https://github.com/huggingface/transformers.git
+git+https://github.com/huggingface/optimum-quanto.git
+controlnet_aux
+firebase_admin
+boto3
+opencv-python
