@@ -7,3 +7,5 @@
 *.mp4
 *.json
 *.env
+*.ppk
+*.pem
