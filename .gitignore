@@ -3,3 +3,6 @@
 *.pyc
 *.db
 *.jfif
+*.safetensors
+*.mp4
+*.json
