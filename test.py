@@ -8,7 +8,7 @@ from botocore.exceptions import ClientError
 
 def get_secret():
 
-    secret_name = "FIREBASE_CRED_secret_key"
+    secret_name = "FIREBASE_CRED_private_key"
     region_name = "us-east-1"
 
     # Create a Secrets Manager client
