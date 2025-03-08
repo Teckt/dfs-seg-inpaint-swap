@@ -30,7 +30,7 @@ def get_secret():
     secret = json.loads(get_secret_value_response['SecretString'])
     secret = secret["FIREBASE_CRED_private_key"]
     print(f"Your secret SecretString is:\n{secret}")
-    # Your code goes here.
+    return secret
 
 
 PREFIX = "FIREBASE_CRED_"
