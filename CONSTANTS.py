@@ -13,7 +13,7 @@ FUSE_HYPER=False
 FUSE_HYPER_ALPHA=0.125
 FUSE_HYPER_REPO='ByteDance/Hyper-SD'
 FUSE_HYPER_MODEL_FILE='Hyper-FLUX.1-dev-8steps-lora.safetensors'
-DOWNLOAD_FILES=False
+DOWNLOAD_FILES=True
 # the dir to look for lora files
 LORA_PATH="C:\\Users\\teckt\\PycharmProjects\\kohya\\kohya_ss\\training_data\\model"
 # the default name to give for every output image file

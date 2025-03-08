@@ -230,7 +230,7 @@ class MyFluxPipe:
         # load and quantize t5
         with tqdm(total=3, desc="loading text_encoder_2") as progress_bar:
             self.text_encoder_2 = T5EncoderModel.from_pretrained(
-                "black-forest-labs/FLUX.1-dev",
+                FLUX_PATH,
                 subfolder="text_encoder_2",
                 torch_dtype=self.dtype, local_files_only=True)
             progress_bar.update()
