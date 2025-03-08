@@ -20,6 +20,6 @@ LORA_PATH="C:\\Users\\teckt\\PycharmProjects\\kohya\\kohya_ss\\training_data\\mo
 REPAINT_OUTPUT_DIR="redressed_results"
 IMAGE_OUTPUT_DIR="generated_results"
 OUTPUT_FILE_BASE_NAME="outputImage.png"
-CRED_PATH='C:/Users/teckt/PycharmProjects/iae_dfstudio/df-studio-1-25ff59cab415.json'
+CRED_PATH='firebase_cred.json'
 STORAGE_BUCKET_ID='df-studio-1.appspot.com'
 JOB_DIR = os.path.join('C:' + os.sep, 'deepfakes', 'df-maker-files')
