@@ -1,5 +1,7 @@
 # install python3.11
 
+# sudo yum install gcc
+
 # sudo yum install git
 
 # sudo yum install mesa-libGL  # for cv2

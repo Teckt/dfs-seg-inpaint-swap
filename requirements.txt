@@ -3,6 +3,7 @@ accelerate
 git+https://github.com/huggingface/diffusers.git
 git+https://github.com/huggingface/transformers.git
 git+https://github.com/huggingface/optimum-quanto.git
+git+https://github.com/huggingface/peft.git
 controlnet_aux
 firebase_admin
 boto3
