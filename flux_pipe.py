@@ -47,7 +47,7 @@ class MyFluxPipe:
             self.clip_L_text_encoder = CLIPTextModel.from_pretrained(
                 TEXT_ENCODER_CLIP_L_PATH,
                 torch_dtype=self.dtype,
-                local_files_only=DOWNLOAD_FILES)
+                local_files_only=USE_LOCAL_FILES)
             progress_bar.update()
 
         self.load_transformer_text_encoder_2()  # inits the transformer and text_encoder_2
@@ -57,7 +57,7 @@ class MyFluxPipe:
             "text_encoder": self.clip_L_text_encoder,
             "text_encoder_2": None,
             "torch_dtype": self.dtype,
-            "local_files_only": DOWNLOAD_FILES
+            "local_files_only": USE_LOCAL_FILES
         }
         print("loading pipeline")
         if fill:
@@ -167,7 +167,7 @@ class MyFluxPipe:
                 subfolder="text_encoder_2",
                 quantization_config=quant_config,
                 torch_dtype=torch.float16,
-                local_files_only=DOWNLOAD_FILES
+                local_files_only=USE_LOCAL_FILES
             )
             progress_bar.update()
 
@@ -178,7 +178,7 @@ class MyFluxPipe:
                 subfolder="transformer",
                 quantization_config=quant_config,
                 torch_dtype=torch.float16,
-                local_files_only=DOWNLOAD_FILES
+                local_files_only=USE_LOCAL_FILES
             )
             progress_bar.update()
 
@@ -198,7 +198,7 @@ class MyFluxPipe:
                 self.flux_transformer = FluxTransformer2DModel.from_pretrained(
                     model_name, subfolder="transformer",
                     # "flux-fill-fp8", subfolder="transformer",
-                    torch_dtype=self.dtype, local_files_only=True if FUSE_HYPER and os.path.exists(self.flux_hyper_model_name) else DOWNLOAD_FILES)
+                    torch_dtype=self.dtype, local_files_only=True if FUSE_HYPER and os.path.exists(self.flux_hyper_model_name) else USE_LOCAL_FILES)
             else:
                 # self.flux_transformer = FluxTransformer2DModel.from_single_file(
                 #     "C:\\Users\\teckt\\.cache\\huggingface\\hub\\models--Kijai--flux-fp8\\snapshots\\e77f550e3fe8be226884d5944a40abdbe4735ff5\\flux1-dev-fp8.safetensors",
@@ -207,7 +207,7 @@ class MyFluxPipe:
                 self.flux_transformer = FluxTransformer2DModel.from_pretrained(
                     model_name, subfolder="transformer",
                     # "flux-fp8", subfolder="transformer",
-                    torch_dtype=self.dtype, local_files_only=True if FUSE_HYPER and os.path.exists(self.flux_hyper_model_name) else DOWNLOAD_FILES)
+                    torch_dtype=self.dtype, local_files_only=True if FUSE_HYPER and os.path.exists(self.flux_hyper_model_name) else USE_LOCAL_FILES)
             progress_bar.update()
 
             # if not self.is_fill:
@@ -232,7 +232,7 @@ class MyFluxPipe:
             self.text_encoder_2 = T5EncoderModel.from_pretrained(
                 FLUX_PATH,
                 subfolder="text_encoder_2",
-                torch_dtype=self.dtype, local_files_only=DOWNLOAD_FILES)
+                torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
             progress_bar.update()
             # progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
             # if not fill:
