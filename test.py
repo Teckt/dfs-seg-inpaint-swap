@@ -28,7 +28,7 @@ def get_secret():
         raise e
 
     secret = get_secret_value_response['SecretString']
-
+    print(f"Your secret SecretString is:\n{secret}")
     # Your code goes here.
 
 
