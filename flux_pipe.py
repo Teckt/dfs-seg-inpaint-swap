@@ -11,7 +11,7 @@ from tqdm import tqdm
 from transformers import T5EncoderModel, CLIPTextModel
 from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
 from transformers import BitsAndBytesConfig as BitsAndBytesConfig
-
+from CONSTANTS import *
 from optimum.quanto import freeze, qfloat8, quantize
 # from optimum_quanto.optimum.quanto import QuantizedTransformersModel
 
@@ -23,11 +23,12 @@ from optimum.quanto import freeze, qfloat8, quantize
 
 class MyFluxPipe:
 
-    def __init__(self, fill=True, lora_path="C:\\Users\\teckt\\PycharmProjects\\kohya\\kohya_ss\\training_data\\model"):
+    def __init__(self, fill=True):
 
         self.dtype = torch.bfloat16
-        self.lora_path = lora_path
-        self.flux_model_name = "black-forest-labs/FLUX.1-Fill-dev" if fill else "black-forest-labs/FLUX.1-dev"
+        self.lora_path = LORA_PATH
+        self.flux_model_name = FLUX_FILL_PATH if fill else FLUX_PATH
+        self.flux_hyper_model_name = FLUX_FILL_HYPER_PATH if fill else FLUX_HYPER_PATH
         self.flux_transformer = None
         # load VAE
         # with tqdm(range(1), "Loading flux_vae"):
@@ -44,76 +45,86 @@ class MyFluxPipe:
         # load tokenizer
         with tqdm(range(1), "Loading CLIPTextModel") as progress_bar:
             self.clip_L_text_encoder = CLIPTextModel.from_pretrained(
-                "openai/clip-vit-large-patch14",
+                TEXT_ENCODER_CLIP_L_PATH,
                 torch_dtype=self.dtype,
                 local_files_only=True)
             progress_bar.update()
 
-        self.load_quanto_pipe()  # inits the transformer and text_encoder_2
-
+        self.load_transformer_text_encoder_2()  # inits the transformer and text_encoder_2
+        pipeline_args = {
+            "pretrained_model_name_or_path": self.flux_model_name,
+            "transformer": None,
+            "text_encoder": self.clip_L_text_encoder,
+            "text_encoder_2": None,
+            "torch_dtype": self.dtype,
+            "local_files_only": DOWNLOAD_FILES
+        }
+        print("loading pipeline")
         if fill:
             print("loading pipeline")
-            self.pipe = FluxFillPipeline.from_pretrained(
-                self.flux_model_name,
-                # tokenizer=self.clip_L_tokenizer,
-                transformer=None,
-                text_encoder=self.clip_L_text_encoder,
-                text_encoder_2=None,
-                # vae=self.flux_vae,
-                torch_dtype=self.dtype,
-                local_files_only=True
-            )
-
+            self.pipe = FluxFillPipeline.from_pretrained(**pipeline_args)
         else:
-            print("loading pipeline")
+            self.pipe = FluxPipeline.from_pretrained(**pipeline_args)
 
-            self.pipe = FluxPipeline.from_pretrained(
-                self.flux_model_name,
-                transformer=None,
-                text_encoder=self.clip_L_text_encoder,
-                text_encoder_2=None,
-                # vae=self.flux_vae,
-                torch_dtype=self.dtype,
-                # device_map="balanced",
-                local_files_only=True
-            )
-        # quantize here before passing to pipe
-        # self.quanto_quantize()
-        # self.fuse_hyper_lora()
         print("adding transformer")
         self.pipe.transformer = self.flux_transformer
         print("adding t5 encoder")
         self.pipe.text_encoder_2 = self.text_encoder_2
 
-        # fuse lora before quantizing
-        self.fuse_hyper_lora()
-        #
-        #save the model here
-        with tqdm(range(3), "Saving transformer") as p:
+        if FUSE_HYPER:
+            #
+            if not os.path.exists(f"{self.flux_hyper_model_name}/diffusion_pytorch_model.safetensors"):
+                # fuse lora before quantizing
+                self.fuse_hyper_lora()
+                #
+                #save the model here
+                with tqdm(range(3), "Saving transformer") as p:
 
-            p.desc = "converting transformer to fp8"
-            self.flux_transformer.to('cuda', dtype=torch.float8_e4m3fn)
-            p.update()
+                    p.desc = "converting transformer to fp8"
+                    self.flux_transformer.to('cuda', dtype=torch.float8_e4m3fn)
+                    p.update()
 
-            p.desc = "saving transformer"
-            self.flux_transformer.save_pretrained("flux-fp8", max_shard_size="16GB")
-            p.update()
+                    p.desc = "saving transformer"
+                    self.flux_transformer.save_pretrained("flux-fp8", max_shard_size="16GB")
+                    p.update()
 
-            p.desc = f"converting transformer back and dtype({self.dtype})"
-            self.flux_transformer.to(dtype=self.dtype)
-            p.update()
+                    p.desc = f"converting transformer back and dtype({self.dtype})"
+                    self.flux_transformer.to(dtype=self.dtype)
+                    p.update()
 
         # quantize
-        self.quanto_quantize()
+        if USE_OPTIMUM_QUANTO:
+            self.quanto_quantize()
 
         self.pipe.vae.enable_slicing()
         # self.pipe.vae.enable_tiling()
 
-        # disable cpu offload if quantized for 24GB
-        # self.pipe.enable_sequential_cpu_offload()
-        # self.pipe.enable_model_cpu_offload()
-        # must call to cuda if disabled cpu offload
-        self.pipe.to("cuda")
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+            gpu_name = torch.cuda.get_device_name(device)
+            total_memory = torch.cuda.get_device_properties(device).total_memory
+            VRAM = total_memory / (1024 ** 3)
+            print(f"GPU Name: {gpu_name}")
+            print(f"Total Memory: {total_memory / (1024 ** 3):.2f} GB")  # Convert bytes to GB
+        else:
+            VRAM = 0
+            print("CUDA is not available.")
+
+        if VRAM < 22:
+            # Must use a cpu offload option if quantization is fp8 or higher for flux
+            if USE_CPU_OFFLOAD:
+                self.pipe.enable_model_cpu_offload()
+            else:
+                self.pipe.enable_sequential_cpu_offload()
+        else:
+            if USE_CPU_OFFLOAD:
+                self.pipe.enable_model_cpu_offload()
+            elif USE_SEQUENTIAL_CPU_OFFLOAD:
+                # disable cpu offload if quantized for 24GB
+                self.pipe.enable_sequential_cpu_offload()
+            else:
+                # must call to cuda if disabled cpu offload
+                self.pipe.to("cuda")
 
     def fuse_hyper_lora(self):
         # control_pipe = FluxControlPipeline.from_pretrained("black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16)
@@ -124,7 +135,7 @@ class MyFluxPipe:
             return
         with tqdm(range(4), desc="Fusing hyper lora") as p:
             self.pipe.load_lora_weights(
-                hf_hub_download("ByteDance/Hyper-SD", "Hyper-FLUX.1-dev-8steps-lora.safetensors"),
+                hf_hub_download(FUSE_HYPER_REPO, FUSE_HYPER_MODEL_FILE),
                 adapter_name="turbo"
             )
 
@@ -133,7 +144,7 @@ class MyFluxPipe:
             #                             adapter_name="turbo")
             p.update()
             p.desc = "Setting adapter"
-            self.pipe.set_adapters(["turbo"], adapter_weights=[0.125])
+            self.pipe.set_adapters(["turbo"], adapter_weights=[FUSE_HYPER_ALPHA])
 
             p.update()
             p.desc = "Fusing lora"
@@ -171,13 +182,21 @@ class MyFluxPipe:
             )
             progress_bar.update()
 
-    def load_quanto_pipe(self):
+    def load_transformer_text_encoder_2(self):
         # load and quantize transformer
 
         with tqdm(range(4), "Loading transformer") as progress_bar:
+            if FUSE_HYPER:
+                if os.path.exists(self.flux_hyper_model_name):
+                    model_name = self.flux_hyper_model_name
+                else:
+                    model_name = self.flux_model_name
+            else:
+                model_name = self.flux_model_name
+            print(f"loading from {model_name}")
             if self.is_fill:
                 self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-                    self.flux_model_name, subfolder="transformer",
+                    model_name, subfolder="transformer",
                     # "flux-fill-fp8", subfolder="transformer",
                     torch_dtype=self.dtype, local_files_only=True)
             else:
@@ -186,7 +205,7 @@ class MyFluxPipe:
                 #     subfolder="transformer",
                 #     torch_dtype=self.dtype, local_files_only=True)
                 self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-                    self.flux_model_name, subfolder="transformer",
+                    model_name, subfolder="transformer",
                     # "flux-fp8", subfolder="transformer",
                     torch_dtype=self.dtype, local_files_only=True)
             progress_bar.update()
@@ -255,29 +274,6 @@ class MyFluxPipe:
         #     #     freeze(self.text_encoder_2)
         #     progress_bar.update()
 
-    def load_loras(self):
-        # return
-        # loras
-        self.pipe.load_lora_weights(
-            self.lora_path, weight_name="jjk.safetensors", adapter_name="jjk")
-
-        # self.pipe.load_lora_weights(self.lora_path,
-        #                             weight_name="hyper8.safetensors",
-        #                             adapter_name="turbo")
-        #
-        # print("converting lora to bfloat16")
-        # self.pipe.to(torch.bfloat16)
-
-        lora_settings = {
-            # "adapter_names": ["jjk", "turbo"],
-            "adapter_names": ["jjk"],
-            # "adapter_weights": [0.875, 0.125]
-            "adapter_weights": [1.0]
-        }
-
-        self.pipe.set_adapters(**lora_settings)
-        # self.pipe.fuse_lora()
-
     def fuse_turbo(self):
         if self.fused_turbo:
             print("turbo already fused")
@@ -303,11 +299,11 @@ class MyFluxPipe:
         self.fused_turbo = True
 
     def apply_flux_loras_with_prompt(self, prompt, use_turbo=False):
-        use_turbo = False
+        # use_turbo = False
         self.loaded_loras = {}
         self.pipe.unload_lora_weights()
-        if use_turbo:
-            prompt += "<turbo-a>"
+        # if use_turbo:
+        #     prompt += "<turbo-a>"
         filtered_prompt, loras = self.extract_lora_params_from_prompt(prompt)
         if len(loras) == 0:
             # set

@@ -8,7 +8,7 @@ import cv2
 import torch
 from PIL import Image
 from huggingface_hub import hf_hub_download
-
+from CONSTANTS import *
 from tf_free_functions import paste_swapped_image
 
 # from pipe_manager import SD15PipelineManager
@@ -120,19 +120,17 @@ class Redresser:
         if self.is_server:
             basename = os.path.basename(image_path)
             redresser_dir = image_path.replace(basename, "")
-            redresser_output_file_path = f"{redresser_dir}/outputImage.png"
+            redresser_output_file_path = f"{redresser_dir}/{OUTPUT_FILE_BASE_NAME}"
         else:
-            redresser_slug = "redressed_results"
 
             if os.path.exists(image_path):
                 # save to same dir as image
                 basename = os.path.basename(image_path)
-                redresser_dir = image_path.replace(basename, redresser_slug)
+                redresser_dir = image_path.replace(basename, REPAINT_OUTPUT_DIR)
             else:
-                basename = "outputImage.png"
-                redresser_dir = redresser_slug
+                redresser_dir = REPAINT_OUTPUT_DIR
 
-            redresser_output_file_path = f"{redresser_dir}/{seed}-{self.settings.options['guidance_scale']}-{self.settings.options['num_inference_steps']}-{basename}"
+            redresser_output_file_path = f"{redresser_dir}/{seed}-{self.settings.options['guidance_scale']}-{self.settings.options['num_inference_steps']}-{OUTPUT_FILE_BASE_NAME}"
             if not os.path.exists(redresser_dir):
                 os.mkdir(redresser_dir)
 
@@ -242,22 +240,12 @@ class ImageGenerator:
         if self.is_server:
             basename = os.path.basename(image_path)
             redresser_dir = image_path.replace(basename, "")
-            redresser_output_file_path = f"{redresser_dir}/outputImage.png"
+            redresser_output_file_path = f"{redresser_dir}/{OUTPUT_FILE_BASE_NAME}"
         else:
             # save to same dir as image
-            redresser_slug = "generated_results"
-            basename = "outputImage.png"
-            # if os.path.isdir(image_path):
-            #     basename = os.path.basename(image_path)
-            #
-            #     redresser_dir = image_path.replace(basename, redresser_slug)
-            #     basename = "outputImage.png"
-            # else:
-            #     basename = "outputImage.png"
-            redresser_dir = redresser_slug
-            redresser_output_file_path = f"{redresser_dir}/{seed}-{self.settings.options['guidance_scale']}-{self.settings.options['num_inference_steps']}-{basename}"
-            if not os.path.exists(redresser_dir):
-                os.mkdir(redresser_dir)
+            redresser_output_file_path = f"{IMAGE_OUTPUT_DIR}/{seed}-{self.settings.options['guidance_scale']}-{self.settings.options['num_inference_steps']}-{OUTPUT_FILE_BASE_NAME}"
+            if not os.path.exists(IMAGE_OUTPUT_DIR):
+                os.mkdir(IMAGE_OUTPUT_DIR)
 
         for image_idx, image in enumerate(final_pil_images):
             print("image_idx", image_idx, "image", image, image.info)

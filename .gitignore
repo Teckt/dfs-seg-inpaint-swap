@@ -6,3 +6,4 @@
 *.safetensors
 *.mp4
 *.json
+*.env

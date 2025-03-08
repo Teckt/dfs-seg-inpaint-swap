@@ -1,4 +1,5 @@
 import os
+import subprocess
 import time
 
 import PIL.Image as Image
@@ -10,9 +11,51 @@ from diffusers.utils.export_utils import export_to_video, _legacy_export_to_vide
 from tqdm import tqdm
 from transformers import T5EncoderModel
 
-from dfs_seg_inpaint_swap.redresser_utils import RedresserSettings
-from flux.flux_tools import run_ffmpeg_optical_flow
-from optimum_quanto.optimum.quanto import quantize, freeze, qfloat8
+from redresser_utils import RedresserSettings
+from optimum.quanto import quantize, freeze, qfloat8
+
+
+def run_ffmpeg_optical_flow(input_video: str, output_video: str, fps: int = 60):
+    """
+    Run FFmpeg's minterpolate filter to calculate optical flow and interpolate frames.
+
+    Args:
+        input_video (str): Path to the input video file.
+        output_video (str): Path to the output video file.
+        fps (int): The target frames per second (default is 60).
+    """
+    # Define the FFmpeg command with minterpolate filter
+    if "gif" in output_video[:-4]:
+        ffmpeg_command = [
+            'ffmpeg',
+            '-y',  # Overwrite the output file if it exists
+            '-i', input_video,  # Input video
+            '-vf', f"minterpolate='fps={fps}'",  # Video filter for optical flow
+            # '-preset', 'veryslow',  # Use slower, better compression for quality
+            # '-crf', '17',  # Constant Rate Factor, lower is better quality (18-23 is good)
+            output_video  # Output video file
+        ]
+    else:
+        ffmpeg_command = [
+            'ffmpeg',
+            '-y',  # Overwrite the output file if it exists
+            '-i', input_video,  # Input video
+            '-vf', f"minterpolate='fps={fps}'",  # Video filter for optical flow
+            '-c:v', 'libx264',  # Use H.264 codec for video
+            '-b:v', '5000k',  # Set bitrate to 5000 kbps (adjust as needed)
+            '-preset', 'veryslow',  # Use slower, better compression for quality
+            '-crf', '17',  # Constant Rate Factor, lower is better quality (18-23 is good)
+            output_video  # Output video file
+        ]
+
+    try:
+        # Run the FFmpeg command
+        result = subprocess.run(ffmpeg_command, check=True, text=True, capture_output=True)
+        print("FFmpeg Output:", result.stdout)
+        print("FFmpeg Error (if any):", result.stderr)
+        print(f"Successfully processed video: {output_video}")
+    except subprocess.CalledProcessError as e:
+        print(f"FFmpeg command failed with error: {e.stderr}")
 
 
 class CogSettings(RedresserSettings):

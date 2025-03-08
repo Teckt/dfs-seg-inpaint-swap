@@ -3,13 +3,13 @@ import os
 import time
 from multiprocessing import Queue, Process
 
-from dfs_seg_inpaint_swap.cog import CogSettings, VideoGenerator
+from cog import CogSettings, VideoGenerator
 from redresser_utils import SocketServer, SocketClient
 from redresser_flux import Redresser, ImageGenerator
 from redresser_sd15 import RedresserSD15, ImageGeneratorSD15
 from redresser_utils import RedresserSettings
-# from iae_firestore_functions import FirestoreFunctions
-
+from fire_functions import FirestoreFunctions
+from CONSTANTS import *
 
 class RepaintJobProcesser:
 
@@ -261,9 +261,8 @@ def run(r="flux", is_server=True):
     if is_server:
         machine_id = f'OVERLORD4-0'  # use -3 or -0 because -2 is weird
 
-        job_dir = os.path.join('C:' + os.sep, 'deepfakes', 'df-maker-files')
-        RepaintJobProcesser.make_dirs(job_dir)
-        firestoreFunctions = FirestoreFunctions(job_dir=job_dir)
+        RepaintJobProcesser.make_dirs(JOB_DIR)
+        firestoreFunctions = FirestoreFunctions()
         job_processor = RepaintJobProcesser()
 
         job_order = 0
@@ -359,5 +358,17 @@ def run(r="flux", is_server=True):
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-r", "--r", default='flux')
+    parser.add_argument("-s", "--is_server", default=False, action='store_true')
+
+    args = parser.parse_args()
+    r = args.r
+    is_server = args.is_server
+    pipe_ids = ("flux", "flux-fill", "sd15", "sd15-fill", "cog-i2v")
+    if r not in pipe_ids:
+        raise ValueError("r must be in one of pipe_ids:", pipe_ids)
+    print(f"running with {r},is_server={is_server}")
     # run("cog-i2v", is_server=False)
-    run("flux", is_server=False)
+    run(r, is_server=is_server)
