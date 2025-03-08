@@ -3,6 +3,7 @@ import os
 import time
 from multiprocessing import Queue, Process
 
+from dfs_seg_inpaint_swap.cog import CogSettings, VideoGenerator
 from redresser_utils import SocketServer, SocketClient
 from redresser_flux import Redresser, ImageGenerator
 from redresser_sd15 import RedresserSD15, ImageGeneratorSD15
@@ -135,10 +136,14 @@ class RepaintJobProcesser:
 
 
 def redresser_flux_process(r, is_server, r_input_queue, r_output_queue):
-
     pipe_map = {"flux": 0, "flux-fill": 1, "sd15": 2, "sd15-fill": 3}
-    img_client = SocketClient(5000 + pipe_map[r])
-    pipe_server = SocketServer(5100 + pipe_map[r])
+    if 'fill' in r:
+
+        img_client = SocketClient(5000 + pipe_map[r])
+        pipe_server = SocketServer(5100 + pipe_map[r])
+    else:
+        img_client = None
+        pipe_server = None
     pipeline = None
 
     while True:
@@ -169,7 +174,8 @@ def get_pipeline(r, is_server):
         r = ImageGenerator(is_server=is_server)
     elif r == "sd15":
         r = ImageGeneratorSD15(is_server=is_server)
-
+    elif r == "cog-i2v":
+        r = VideoGenerator(is_server=is_server)
     return r
 
 
@@ -180,20 +186,53 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
         print("mapped settings", pipeline.settings.options)
     else:
         pipeline.settings.options = options.copy()
+        # need absolute path for the input image
+        image_file_path: str = pipeline.settings.options["image"]
+        if not image_file_path.startswith("C:"):
+            absolute_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                image_file_path)
+            pipeline.settings.options["image"] = absolute_path
         print("passed settings", pipeline.settings.options)
-
 
     # pass options to image processor
     if isinstance(pipeline, Redresser):
         print("passing settings to image processor")
-        img_client.put(pipeline.settings)
-        print("waiting for image processor outputs")
-        im_outputs = pipe_server.get()
+        while True:
+            try:
+                img_client.put(pipeline.settings)
+                break
+            except ConnectionRefusedError:
+                print("\rError! Trying again in 5 seconds...", end="")
 
-        if im_outputs is None:
-            return False
-        print("running pipeline")
-        pipeline.run(*im_outputs)
+        # go through each image in dir to wait
+        if os.path.isdir(pipeline.settings.options['image']):
+            image_dir = pipeline.settings.options['image']
+            for file_index, file in enumerate(os.listdir(image_dir)):
+                if file.endswith(".jpg") or file.endswith(".png") or file.endswith(".webp") or file.endswith(".jfif"):
+                    print(f"[{file_index}] waiting for image processor outputs for file {file}")
+                    im_outputs = pipe_server.get()
+
+                    if im_outputs is None:
+                        return False
+
+                    print(f"[{file_index}] parsing image processor outputs for pipe")
+                    parsed_im_outputs = pipeline.parse_image_processor_outputs(*im_outputs)
+
+                    print(f"[{file_index}] running pipeline")
+                    pipeline.run(*parsed_im_outputs)
+        else:
+            print("waiting for image processor outputs")
+            im_outputs = pipe_server.get()
+
+            if im_outputs is None:
+                return False
+
+            print("parsing image processor outputs for pipe")
+            parsed_im_outputs = pipeline.parse_image_processor_outputs(*im_outputs)
+
+            print("running pipeline")
+            pipeline.run(*parsed_im_outputs)
     else:
         print("running pipeline")
         pipeline.run()
@@ -202,7 +241,7 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
 
 
 def run(r="flux", is_server=True):
-    pipe_ids = ("flux", "flux-fill", "sd15", "sd15-fill")
+    pipe_ids = ("flux", "flux-fill", "sd15", "sd15-fill", "cog-i2v")
     if r not in pipe_ids:
         raise ValueError("r must be in one of pipe_ids:", pipe_ids)
 
@@ -306,13 +345,19 @@ def run(r="flux", is_server=True):
                 print("sleeping 5...")
                 time.sleep(5)
     else:
-        settings = RedresserSettings()
+        if r == "cog-i2v":
+            settings = CogSettings()
+        else:
+            settings = RedresserSettings()
         while True:
             settings.set_options()
-            r_input_queue.put(settings.options.copy())
+            runs = int(settings.options.get("runs", 1))
+            for _ in range(runs):
+                r_input_queue.put(settings.options.copy())
 
-            result = r_output_queue.get(block=True)
+                result = r_output_queue.get(block=True)
 
 
 if __name__ == "__main__":
+    # run("cog-i2v", is_server=False)
     run("flux", is_server=False)

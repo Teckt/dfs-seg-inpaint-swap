@@ -167,9 +167,9 @@ class RedresserSettings:
     hand_model_path = "hand_yolov9c.pt"  # downloads from Bingsu/adetailer
     default_options = {
         "prompt": "",
-        "image": "bo.png",
+        "image": "images",
         # "mask": "seg/00000.png",
-        "guidance_scale": 3.5,
+        "guidance_scale": 30,
         "num_inference_steps": 8,
         # "negative_prompt": None,
         # "strength": None,
@@ -177,12 +177,13 @@ class RedresserSettings:
         "seed": -1,
         "max_side": 1024,
         "center_crop": False,
-        "padding": .25,
-        "SEGMENT_ID": SEGMENT_PERSON,
+        "padding": 0,
+        "SEGMENT_ID": SEGMENT_ALL,
         "keep_hands": True,
         "keep_face": True,
         # "face_mask_scale": 1.0,
         # "use_faceswap": False,
+        "runs": 1,  # how many times to run with these settings
     }
 
     def __init__(self, ):
@@ -201,8 +202,9 @@ class RedresserSettings:
 
         self.options["max_side"] = dfs_options.get("max_side", 1024)
         self.options["center_crop"] = dfs_options.get("center_crop", False)
-        self.options["padding"] = dfs_options.get("padding", 0.01)
+        self.options["padding"] = dfs_options.get("padding", 0)
         self.options["SEGMENT_ID"] = RedresserSettings.SEGMENT_PERSON#dfs_options.get("autoMaskOption", RedresserSettings.SEGMENT_PERSON)
+        self.options["runs"] = dfs_options.get("runs", 1)
 
         try:
             self.options.pop("mask")
@@ -261,70 +263,13 @@ class RedresserSettings:
                     self.options[key] = self.__class__.default_options[key]
             if key in ['use_dynamic_cfg', 'center_crop', "keep_hands", 'keep_face', 'use_faceswap']:
                 try:
-                    self.options[key] = bool(self.options[key])
-                except:
-                    self.options[key] = self.__class__.default_options[key]
-            if key in ['image', 'mask']:
-                if not os.path.exists(val):
-                    self.options[key] = self.__class__.default_options[key]
-
-
-class FluxInputOptions:
-    default_options = {
-        "prompt": "jjk",
-        "image": "boji0.jpg",
-        "mask": "seg/00000.png",
-        "max_side": 1024,
-        "guidance_scale": 30.0,
-        "num_inference_steps": 20,
-        # "seed": -1,
-    }
-
-    def __init__(self, ):
-        self.options = {}
-        self.previous_options = self.__class__.default_options.copy()
-
-    def set_options(self):
-        use_previous_for_rest = False
-        for key, val in self.__class__.default_options.items():
-            if use_previous_for_rest:
-                self.options[key] = self.previous_options[key]
-                continue
-
-            self.options[key] = input(f'{key}({self.previous_options[key]}):')
-            print("You've entered:", self.options[key])
-
-            # PREVIOUS KEY
-            if self.options[key] == '':
-                self.options[key] = self.previous_options[key]
-            # ALL PREVIOUS KEY
-            elif self.options[key] == 'p':
-                use_previous_for_rest = True
-                print("using previous config:", self.previous_options)
-                self.options[key] = self.previous_options[key]
-            # RESET KEY
-            elif self.options[key] == 'r':
-                self.options[key] = val
-
-        self.check_inputs()
-
-        self.previous_options = self.options.copy()
-
-    def check_inputs(self, ):
-        for key, val in self.options.items():
-            if key in ['guidance_scale', ]:
-                try:
-                    self.options[key] = float(self.options[key])
-                except:
-                    self.options[key] = self.__class__.default_options[key]
-            if key in ['num_inference_steps', 'max_side', 'height', 'width']:
-                try:
-                    self.options[key] = int(self.options[key])
-                except:
-                    self.options[key] = self.__class__.default_options[key]
-            if key in ['use_dynamic_cfg', ]:
-                try:
-                    self.options[key] = bool(self.options[key])
+                    bool_opt = self.options[key]
+                    if bool_opt.lower() == 'true':
+                        self.options[key] = True
+                    elif bool_opt.lower() == 'false':
+                        self.options[key] = False
+                    else:
+                        self.options[key] = bool(self.options[key])
                 except:
                     self.options[key] = self.__class__.default_options[key]
             if key in ['image', 'mask']:
@@ -375,8 +320,7 @@ class ImageResizeParams:
 
 
 if __name__ == "__main__":
-    inputOptions = FluxInputOptions()
-    inputOptions.set_options()
+    pass
 
 
 
@@ -549,6 +493,25 @@ def yolo_segment_image(yolo_model, img):
             seg_results.append([Image.fromarray(imgg), Image.fromarray(empty_img)])
 
         return seg_results
+
+
+def load_image(image_path, return_type="pil"):
+    """
+    Loads an image from the given path and determines its original type based on filename.
+
+    :param image_path: Path to the saved image file
+    :param return_type: PIL numpy or Torch tensor to return
+    :return: Image in its original format (NumPy array, PIL image, or Torch tensor)
+    """
+    image = Image.open(image_path)
+    filename = image_path.split("/")[-1]
+
+    if "numpy" in return_type:
+        return np.array(image)
+    elif "pil" in return_type:
+        return image
+    elif "tensor" in return_type:
+        return torch.tensor(np.array(image) / 255.0).permute(2, 0, 1)
 
 
 class SocketServer:

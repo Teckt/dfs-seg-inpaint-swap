@@ -13,7 +13,8 @@ from tf_free_functions import paste_swapped_image
 
 # from pipe_manager import SD15PipelineManager
 
-from redresser_utils import RedresserSettings, ImageResizeParams, yolo8_extract_faces, yolo_segment_image, make_inpaint_condition
+from redresser_utils import RedresserSettings, ImageResizeParams, yolo8_extract_faces, yolo_segment_image, \
+    make_inpaint_condition, load_image
 
 import numpy as np
 
@@ -39,6 +40,40 @@ class Redresser:
         else:
             self.pipe = None
 
+    def parse_image_processor_outputs(self, batch_frames, orig_paths, seg_paths, control_images_inpaint, control_images_p, yolo_results_condensed, image_resize_params, image_path):
+        """
+        :param batch_frames: None
+        :param orig_imgs: list of image file paths, load images and convert to PIL
+        :param seg_imgs: list of image file paths, load images and convert to PIL
+        :param control_images_inpaint: None; do the inpaint condition here
+        :param control_images_p: None
+        :param yolo_results: converted and condensed dict, load images and convert to numpy
+        :param image_resize_params: None
+        :param image_path: same
+
+        """
+        orig_imgs = [load_image(i, "pil") for i in orig_paths]
+        seg_imgs = [load_image(i, "pil") for i in seg_paths]
+
+        control_images_inpaint = [
+            make_inpaint_condition(orig_imgs[i], seg_imgs[i], 0.5)
+            for i in range(len(orig_imgs))
+        ]
+        yolo_results = {}
+        for image_index, yolo_result in yolo_results_condensed.items():
+            if image_index not in yolo_results.keys():
+                yolo_results[image_index] = {}
+
+            for (face_index, face_data) in yolo_result.items():
+                if face_index not in yolo_results[image_index].keys():
+                    yolo_results[image_index][face_index] = {}
+                aligned_cropped_image = load_image(face_data['aligned_cropped_image_path'], "numpy")
+                seg_mask = load_image(face_data['seg_mask_path'], "numpy")
+                yolo_results[image_index][face_index]['aligned_cropped_image'] = aligned_cropped_image
+                yolo_results[image_index][face_index]['seg_mask'] = seg_mask
+                yolo_results[image_index][face_index]['aligned_cropped_params'] = face_data['aligned_cropped_params']
+
+        return batch_frames, orig_imgs, seg_imgs, control_images_inpaint, control_images_p, yolo_results, image_resize_params, image_path
     def run(self, batch_frames, orig_imgs, seg_imgs, control_images_inpaint, control_images_p, yolo_results, image_resize_params, image_path):
 
         seed = self.settings.options.get("seed", -1)
@@ -52,13 +87,13 @@ class Redresser:
         prompt = self.settings.options["prompt"]
         if self.model == "flux-fill":
             prompt = self.pipe.apply_flux_loras_with_prompt(prompt)
-
+        width, height = orig_imgs[0].size
         args = {
             "prompt": prompt,
             "image": orig_imgs[0],
             "mask_image": seg_imgs[0],
-            "height": image_resize_params.new_h,
-            "width": image_resize_params.new_w,
+            "height": height,
+            "width": width,
             "guidance_scale": self.settings.options["guidance_scale"],
             "num_inference_steps": self.settings.options["num_inference_steps"],
             # "max_sequence_length": 512,
@@ -176,8 +211,8 @@ class ImageGenerator:
 
         args = {
             "prompt": prompt,
-            "height": 1024,
-            "width": 1024,
+            "height": self.settings.options["max_side"],
+            "width": self.settings.options["max_side"],
             "guidance_scale": self.settings.options["guidance_scale"],
             "num_inference_steps": self.settings.options["num_inference_steps"],
             # "guidance_scale": random.uniform(3.5, 7.5),  # self.settings.options["guidance_scale"],
@@ -192,6 +227,7 @@ class ImageGenerator:
         #     args["strength"] = self.settings.options["strength"]
         # if self.settings.options["clip_skip"] > 0:
         #     args["clip_skip"] = self.settings.options["clip_skip"]
+
         if generator is not None:
             args["generator"] = generator
 
@@ -210,13 +246,15 @@ class ImageGenerator:
         else:
             # save to same dir as image
             redresser_slug = "generated_results"
-            if os.path.exists(image_path):
-                basename = os.path.basename(image_path)
-
-                redresser_dir = image_path.replace(basename, redresser_slug)
-            else:
-                basename = "outputImage.png"
-                redresser_dir = redresser_slug
+            basename = "outputImage.png"
+            # if os.path.isdir(image_path):
+            #     basename = os.path.basename(image_path)
+            #
+            #     redresser_dir = image_path.replace(basename, redresser_slug)
+            #     basename = "outputImage.png"
+            # else:
+            #     basename = "outputImage.png"
+            redresser_dir = redresser_slug
             redresser_output_file_path = f"{redresser_dir}/{seed}-{self.settings.options['guidance_scale']}-{self.settings.options['num_inference_steps']}-{basename}"
             if not os.path.exists(redresser_dir):
                 os.mkdir(redresser_dir)

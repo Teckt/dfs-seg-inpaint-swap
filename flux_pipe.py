@@ -5,14 +5,15 @@ import numpy as np
 import cv2
 import torch
 from diffusers import FluxFillPipeline, AutoencoderKL, FluxTransformer2DModel, FluxPipeline
+from huggingface_hub import hf_hub_download
 # from diffusers.utils import load_image
 from tqdm import tqdm
 from transformers import T5EncoderModel, CLIPTextModel
 from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
 from transformers import BitsAndBytesConfig as BitsAndBytesConfig
 
-from optimum_quanto.optimum.quanto import freeze, qfloat8, quantize
-from optimum_quanto.optimum.quanto import QuantizedTransformersModel
+from optimum.quanto import freeze, qfloat8, quantize
+# from optimum_quanto.optimum.quanto import QuantizedTransformersModel
 
 
 # from yolomodel.redresser.flux_controlnet_inpainting.transformer_flux import FluxTransformer2DModel as FluxTransformer2DModel_alimama
@@ -22,11 +23,12 @@ from optimum_quanto.optimum.quanto import QuantizedTransformersModel
 
 class MyFluxPipe:
 
-    def __init__(self, fill=True):
+    def __init__(self, fill=True, lora_path="C:\\Users\\teckt\\PycharmProjects\\kohya\\kohya_ss\\training_data\\model"):
 
         self.dtype = torch.bfloat16
-        self.lora_path = "C:\\Users\\teckt\\PycharmProjects\\kohya\\kohya_ss\\training_data\\model"
+        self.lora_path = lora_path
         self.flux_model_name = "black-forest-labs/FLUX.1-Fill-dev" if fill else "black-forest-labs/FLUX.1-dev"
+        self.flux_transformer = None
         # load VAE
         # with tqdm(range(1), "Loading flux_vae"):
         #     self.flux_vae = AutoencoderKL.from_pretrained(
@@ -36,7 +38,9 @@ class MyFluxPipe:
         #         torch_dtype=self.dtype, local_files_only=True)
         #     # self.flux_vae.to(self.dtype)
 
-        use_bnb = False
+        self.fused_turbo = False
+        self.is_fill = fill
+
         # load tokenizer
         with tqdm(range(1), "Loading CLIPTextModel") as progress_bar:
             self.clip_L_text_encoder = CLIPTextModel.from_pretrained(
@@ -45,79 +49,12 @@ class MyFluxPipe:
                 local_files_only=True)
             progress_bar.update()
 
-        if use_bnb:
-            with tqdm(range(1), "Loading and quantizing t5 encoder") as progress_bar:
-                quant_config = BitsAndBytesConfig(load_in_8bit=True)
-                self.text_encoder_2 = T5EncoderModel.from_pretrained(
-                    "black-forest-labs/FLUX.1-dev",
-                    subfolder="text_encoder_2",
-                    quantization_config=quant_config,
-                    torch_dtype=torch.float16,
-                    local_files_only=True
-                )
-                progress_bar.update()
+        self.load_quanto_pipe()  # inits the transformer and text_encoder_2
 
-            with tqdm(range(1), "Loading and quantizing transformer") as progress_bar:
-                quant_config = DiffusersBitsAndBytesConfig(load_in_8bit=True)
-                self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-                    self.flux_model_name,
-                    subfolder="transformer",
-                    quantization_config=quant_config,
-                    torch_dtype=torch.float16,
-                    local_files_only=True
-                )
-                progress_bar.update()
-        else:
-            # load and quantize transformer
-            with tqdm(range(3), "Loading transformer") as progress_bar:
-                self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-                    self.flux_model_name,
-                # self.flux_transformer = FluxTransformer2DModel.from_single_file(
-                    # "C:\\Users\\teckt\\PycharmProjects\\sd-trainer\\diffusers\\examples\\dreambooth\\flux-fill-fp8",
-                    # "C:\\Users\\teckt\\.cache\\huggingface\\hub\\models--Kijai--flux-fp8\\snapshots\\e77f550e3fe8be226884d5944a40abdbe4735ff5\\flux1-dev-fp8.safetensors",
-                    # self.flux_model_name,
-                    subfolder="transformer",
-                    torch_dtype=self.dtype, local_files_only=True) if not fill else \
-                    \
-                    FluxTransformer2DModel.from_pretrained(
-                        #     self.flux_model_name,
-                        self.flux_model_name,
-                        subfolder="transformer",
-                        torch_dtype=self.dtype, local_files_only=True)
-
-                progress_bar.update()
-                # progress_bar.set_description(f"quantizing flux_transformer to qfloat8")
-
-                # if not fill:
-
-                # quantize(self.flux_transformer, weights=qfloat8)
-                progress_bar.update()
-                # progress_bar.set_description(f"freezing flux_transformer")
-                # if not fill:
-                # freeze(self.flux_transformer)
-                progress_bar.update()
-
-                # self.flux_transformer.to(self.dtype)
-
-            # load and quantize t5
-            with tqdm(total=3, desc="loading text_encoder_2") as progress_bar:
-                self.text_encoder_2 = T5EncoderModel.from_pretrained(
-                    "black-forest-labs/FLUX.1-dev",
-                    subfolder="text_encoder_2",
-                    torch_dtype=self.dtype, local_files_only=True)
-                progress_bar.update()
-                # progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
-                # if not fill:
-                #     quantize(self.text_encoder_2, weights=qfloat8)
-                progress_bar.update()
-                # progress_bar.set_description("freezing text_encoder_2")
-                # if not fill:
-                #     freeze(self.text_encoder_2)
-                progress_bar.update()
         if fill:
             print("loading pipeline")
             self.pipe = FluxFillPipeline.from_pretrained(
-                "black-forest-labs/FLUX.1-Fill-dev",
+                self.flux_model_name,
                 # tokenizer=self.clip_L_tokenizer,
                 transformer=None,
                 text_encoder=self.clip_L_text_encoder,
@@ -128,30 +65,10 @@ class MyFluxPipe:
             )
 
         else:
-            # load this pipeline to get the tokenizers
-            # self.pipe = FluxFillPipeline.from_pretrained(
-            #     "black-forest-labs/FLUX.1-Fill-dev",
-            #     # tokenizer=self.clip_L_tokenizer,
-            #     transformer=None,
-            #     text_encoder=None,
-            #     text_encoder_2=None,
-            #     vae=self.flux_vae,
-            #     torch_dtype=self.dtype,
-            #     local_files_only=True
-            # )
-            # load main pipe and transfer tokenizers to it
             print("loading pipeline")
-            # load VAE
-            # with tqdm(range(1), "Loading flux_vae"):
-            #     self.flux_vae = AutoencoderKL.from_single_file(
-            #         # self.flux_model_name, subfolder="vae",
-            #         "C:/Users/teckt/.cache/huggingface/hub/models--black-forest-labs--FLUX.1-dev/snapshots/0ef5fff789c832c5c7f4e127f94c8b54bbcced44/ae.safetensors",
-            #
-            #         torch_dtype=self.dtype, local_files_only=True)
-            #     # self.flux_vae.to(self.dtype)
 
             self.pipe = FluxPipeline.from_pretrained(
-                "black-forest-labs/FLUX.1-dev",
+                self.flux_model_name,
                 transformer=None,
                 text_encoder=self.clip_L_text_encoder,
                 text_encoder_2=None,
@@ -160,22 +77,183 @@ class MyFluxPipe:
                 # device_map="balanced",
                 local_files_only=True
             )
-
+        # quantize here before passing to pipe
+        # self.quanto_quantize()
+        # self.fuse_hyper_lora()
         print("adding transformer")
         self.pipe.transformer = self.flux_transformer
         print("adding t5 encoder")
         self.pipe.text_encoder_2 = self.text_encoder_2
 
-        # self.load_loras()
+        # fuse lora before quantizing
+        self.fuse_hyper_lora()
+        #
+        #save the model here
+        with tqdm(range(3), "Saving transformer") as p:
 
-        # with tqdm(range(1), "Casting to float16"):
-        #     self.pipe.to(torch.float16)
-        # self.pipe.enable_free_noise_split_inference()
-        # self.pipe.enable_sequential_cpu_offload()
-        self.pipe.enable_model_cpu_offload()
-        # self.pipe.to("cuda")
+            p.desc = "converting transformer to fp8"
+            self.flux_transformer.to('cuda', dtype=torch.float8_e4m3fn)
+            p.update()
+
+            p.desc = "saving transformer"
+            self.flux_transformer.save_pretrained("flux-fp8", max_shard_size="16GB")
+            p.update()
+
+            p.desc = f"converting transformer back and dtype({self.dtype})"
+            self.flux_transformer.to(dtype=self.dtype)
+            p.update()
+
+        # quantize
+        self.quanto_quantize()
+
         self.pipe.vae.enable_slicing()
-        self.pipe.vae.enable_tiling()
+        # self.pipe.vae.enable_tiling()
+
+        # disable cpu offload if quantized for 24GB
+        # self.pipe.enable_sequential_cpu_offload()
+        # self.pipe.enable_model_cpu_offload()
+        # must call to cuda if disabled cpu offload
+        self.pipe.to("cuda")
+
+    def fuse_hyper_lora(self):
+        # control_pipe = FluxControlPipeline.from_pretrained("black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16)
+        # control_pipe.load_lora_weights("black-forest-labs/FLUX.1-Depth-dev-lora", adapter_name="depth")
+
+        if self.fused_turbo:
+            print("turbo already fused")
+            return
+        with tqdm(range(4), desc="Fusing hyper lora") as p:
+            self.pipe.load_lora_weights(
+                hf_hub_download("ByteDance/Hyper-SD", "Hyper-FLUX.1-dev-8steps-lora.safetensors"),
+                adapter_name="turbo"
+            )
+
+            # self.pipe.load_lora_weights(self.lora_path,
+            #                             weight_name="turbo-a.safetensors",
+            #                             adapter_name="turbo")
+            p.update()
+            p.desc = "Setting adapter"
+            self.pipe.set_adapters(["turbo"], adapter_weights=[0.125])
+
+            p.update()
+            p.desc = "Fusing lora"
+            self.pipe.fuse_lora()
+            p.update()
+            p.desc = "Unloading lora"
+            self.pipe.unload_lora_weights()
+            p.desc = "Deleting adapter"
+            # self.pipe.delete_adapters(["hyper-sd"])
+            self.pipe.delete_adapters(["turbo"])
+            p.update()
+        self.fused_turbo = True
+
+    def load_bnb_pipe(self):
+
+        with tqdm(range(1), "Loading and quantizing t5 encoder") as progress_bar:
+            quant_config = BitsAndBytesConfig(load_in_8bit=True)
+            self.text_encoder_2 = T5EncoderModel.from_pretrained(
+                "black-forest-labs/FLUX.1-dev",
+                subfolder="text_encoder_2",
+                quantization_config=quant_config,
+                torch_dtype=torch.float16,
+                local_files_only=True
+            )
+            progress_bar.update()
+
+        with tqdm(range(1), "Loading and quantizing transformer") as progress_bar:
+            quant_config = DiffusersBitsAndBytesConfig(load_in_8bit=True)
+            self.flux_transformer = FluxTransformer2DModel.from_pretrained(
+                self.flux_model_name,
+                subfolder="transformer",
+                quantization_config=quant_config,
+                torch_dtype=torch.float16,
+                local_files_only=True
+            )
+            progress_bar.update()
+
+    def load_quanto_pipe(self):
+        # load and quantize transformer
+
+        with tqdm(range(4), "Loading transformer") as progress_bar:
+            if self.is_fill:
+                self.flux_transformer = FluxTransformer2DModel.from_pretrained(
+                    self.flux_model_name, subfolder="transformer",
+                    # "flux-fill-fp8", subfolder="transformer",
+                    torch_dtype=self.dtype, local_files_only=True)
+            else:
+                # self.flux_transformer = FluxTransformer2DModel.from_single_file(
+                #     "C:\\Users\\teckt\\.cache\\huggingface\\hub\\models--Kijai--flux-fp8\\snapshots\\e77f550e3fe8be226884d5944a40abdbe4735ff5\\flux1-dev-fp8.safetensors",
+                #     subfolder="transformer",
+                #     torch_dtype=self.dtype, local_files_only=True)
+                self.flux_transformer = FluxTransformer2DModel.from_pretrained(
+                    self.flux_model_name, subfolder="transformer",
+                    # "flux-fp8", subfolder="transformer",
+                    torch_dtype=self.dtype, local_files_only=True)
+            progress_bar.update()
+
+            # if not self.is_fill:
+            #     progress_bar.set_description(f"fusing turbo-alpha lora before quantization")
+            #     self.fuse_turbo()
+            progress_bar.update()
+            # progress_bar.set_description(f"quantizing flux_transformer to qfloat8")
+
+            # if not fill:
+
+            # quantize(self.flux_transformer, weights=qfloat8)
+            progress_bar.update()
+            # progress_bar.set_description(f"freezing flux_transformer")
+            # if not fill:
+            # freeze(self.flux_transformer)
+            progress_bar.update()
+
+            # self.flux_transformer.to(self.dtype)
+
+        # load and quantize t5
+        with tqdm(total=3, desc="loading text_encoder_2") as progress_bar:
+            self.text_encoder_2 = T5EncoderModel.from_pretrained(
+                "black-forest-labs/FLUX.1-dev",
+                subfolder="text_encoder_2",
+                torch_dtype=self.dtype, local_files_only=True)
+            progress_bar.update()
+            # progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
+            # if not fill:
+            #     quantize(self.text_encoder_2, weights=qfloat8)
+            progress_bar.update()
+            # progress_bar.set_description("freezing text_encoder_2")
+            # if not fill:
+            #     freeze(self.text_encoder_2)
+            progress_bar.update()
+
+    def quanto_quantize(self):
+        # load and quantize transformer
+        with tqdm(range(2), "Quantizing transformer") as progress_bar:
+
+            # progress_bar.update()
+            # progress_bar.set_description(f"quantizing flux_transformer to qfloat8")
+
+            # if not fill:
+
+            quantize(self.flux_transformer, weights=qfloat8)
+            progress_bar.update()
+            progress_bar.set_description(f"freezing flux_transformer")
+            # if not fill:
+            freeze(self.flux_transformer)
+            progress_bar.update()
+
+            # self.flux_transformer.to(self.dtype)
+
+        # # load and quantize t5
+        # with tqdm(total=3, desc="loading text_encoder_2") as progress_bar:
+        #
+        #     progress_bar.update()
+        #     # progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
+        #     # if not fill:
+        #     #     quantize(self.text_encoder_2, weights=qfloat8)
+        #     progress_bar.update()
+        #     # progress_bar.set_description("freezing text_encoder_2")
+        #     # if not fill:
+        #     #     freeze(self.text_encoder_2)
+        #     progress_bar.update()
 
     def load_loras(self):
         # return
@@ -199,6 +277,30 @@ class MyFluxPipe:
 
         self.pipe.set_adapters(**lora_settings)
         # self.pipe.fuse_lora()
+
+    def fuse_turbo(self):
+        if self.fused_turbo:
+            print("turbo already fused")
+            return
+        with tqdm(range(4), desc="Fusing turbo alpha lora") as p:
+            self.flux_transformer.load_lora_adapter(self.lora_path,
+                                        weight_name="turbo-a.safetensors",
+                                        adapter_name="turbo")
+            p.update()
+            p.desc = "Setting adapter"
+            lora_settings = {"adapter_names": ["turbo"],
+                             "weights": [1.0]}
+            self.flux_transformer.set_adapters(**lora_settings)
+            p.update()
+            p.desc = "Fusing lora"
+            self.flux_transformer.fuse_lora()
+            p.update()
+            p.desc = "Unloading lora"
+            self.flux_transformer.unload_lora()
+            p.desc = "Deleting adapter"
+            self.flux_transformer.delete_adapters(["turbo"])
+            p.update()
+        self.fused_turbo = True
 
     def apply_flux_loras_with_prompt(self, prompt, use_turbo=False):
         use_turbo = False
@@ -303,70 +405,6 @@ class MyFluxPipe:
         return adapter_name, adapter_scale
 
 
-class FluxInputOptions:
-    default_options = {
-        "prompt": "jjk",
-        # "image": "bb.jpg",
-        # "mask": "seg/00000.png",
-        "max_side": 1024,
-        "guidance_scale": 6.0,
-        "num_inference_steps": 20,
-        "batch_size": 4,
-        "seed": -1,
-    }
-
-    def __init__(self, ):
-        self.options = {}
-        self.previous_options = self.__class__.default_options.copy()
-
-    def set_options(self):
-        use_previous_for_rest = False
-        for key, val in self.__class__.default_options.items():
-            if use_previous_for_rest:
-                self.options[key] = self.previous_options[key]
-                continue
-
-            self.options[key] = input(f'{key}({self.previous_options[key]}):')
-            print("You've entered:", self.options[key])
-
-            # PREVIOUS KEY
-            if self.options[key] == '':
-                self.options[key] = self.previous_options[key]
-            # ALL PREVIOUS KEY
-            elif self.options[key] == 'p':
-                use_previous_for_rest = True
-                print("using previous config:", self.previous_options)
-                self.options[key] = self.previous_options[key]
-            # RESET KEY
-            elif self.options[key] == 'r':
-                self.options[key] = val
-
-        self.check_inputs()
-
-        self.previous_options = self.options.copy()
-
-    def check_inputs(self, ):
-        for key, val in self.options.items():
-            if key in ['guidance_scale', ]:
-                try:
-                    self.options[key] = float(self.options[key])
-                except:
-                    self.options[key] = self.__class__.default_options[key]
-            if key in ['num_inference_steps', 'max_side', 'height', 'width', 'batch_size']:
-                try:
-                    self.options[key] = int(self.options[key])
-                except:
-                    self.options[key] = self.__class__.default_options[key]
-            if key in ['use_dynamic_cfg', ]:
-                try:
-                    self.options[key] = bool(self.options[key])
-                except:
-                    self.options[key] = self.__class__.default_options[key]
-            if key in ['image', 'mask']:
-                if not os.path.exists(val):
-                    self.options[key] = self.__class__.default_options[key]
-
-
 class ImageResizeParams:
     # contains the modified h and w along with the crop coords in x1x2y1y2
     def __init__(self, h, w, max_side, center_crop):
@@ -407,63 +445,3 @@ class ImageResizeParams:
                 image = cv2.resize(image, (self.new_w, self.new_h), interpolation=cv2.INTER_CUBIC)
 
         return image
-
-
-if __name__ == "__main__":
-    # gpu_index = 0
-    # import os
-    #
-    # os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_index)
-    # import tensorflow as tf
-    #
-    # gpus = tf.config.experimental.list_physical_devices('GPU')
-    # for gpu in gpus:
-    #     tf.config.experimental.set_memory_growth(gpu, True)
-
-    flux_pipe = MyFluxPipe(fill=False)
-    input_options = FluxInputOptions()
-
-    first_run = True
-    while True:
-        # get options
-        input_options.set_options()
-        # prepare image
-        # image = Image.open(input_options.options["image"])
-        # mask = Image.open(input_options.options["mask"])
-        # image_resizer = ImageResizeParams(image.height, image.width, input_options.options["max_side"], False)
-        # image = image_resizer.apply_params(image)
-        # mask = image_resizer.apply_params(mask)
-        # # create universal args
-        # flux_args = {
-        #     "prompt": input_options.options["prompt"],
-        #     "image": image,
-        #     "mask_image": mask,
-        #     "height": image_resizer.new_h,
-        #     "width": image_resizer.new_w,
-        #     "guidance_scale": input_options.options["guidance_scale"],
-        #     "num_inference_steps": input_options.options["num_inference_steps"],
-        #     "max_sequence_length": 512,
-        #     # "generator": torch.Generator("cpu").manual_seed(88)
-        # }
-
-        # normal
-        flux_args = {
-            "prompt": input_options.options["prompt"],
-            "height": input_options.options["max_side"],
-            "width": input_options.options["max_side"],
-            "guidance_scale": input_options.options["guidance_scale"],
-            "num_inference_steps": input_options.options["num_inference_steps"],
-            # "max_sequence_length": 512,
-            # "generator": torch.Generator("cpu").manual_seed(88)
-        }
-
-        # # modify if using alimama controlnet inpainting
-        # if inpaint_type == "control":
-        #     flux_args["control_image"] = flux_args.pop("image")
-        #     flux_args["control_mask"] = flux_args.pop("mask_image")
-        #     flux_args["negative_prompt"] = "bad quality, poor quality, blurry, grainy, artifacts"
-        # run
-        for i in range(input_options.options["batch_size"]):
-            image = flux_pipe.pipe(**flux_args).images[0]
-            # save
-            image.save(f"{int(time.time())}-{input_options.options['num_inference_steps']}-{input_options.options['guidance_scale']}-flux-dev.png")
