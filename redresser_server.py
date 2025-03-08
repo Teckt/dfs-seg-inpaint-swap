@@ -16,6 +16,9 @@ class RepaintJobProcesser:
     @staticmethod
     def make_dirs(job_dir=os.path.join('C:' + os.sep, 'deepfakes', 'df-maker-files')):
         RepaintJobProcesser.JOB_DIR = job_dir
+        if not os.path.exists(RepaintJobProcesser.JOB_DIR):
+            os.mkdir(RepaintJobProcesser.JOB_DIR)
+            
         RepaintJobProcesser.USERS_DIR = os.path.join(RepaintJobProcesser.JOB_DIR, "users")
         if not os.path.exists(RepaintJobProcesser.USERS_DIR):
             os.mkdir(RepaintJobProcesser.USERS_DIR)
