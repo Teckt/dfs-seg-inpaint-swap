@@ -7,8 +7,10 @@ from PIL import Image
 import torch
 import os
 
-from tf_free_functions import align_crop_image, paste_swapped_image
+from diffusers import FluxTransformer2DModel
 
+from tf_free_functions import align_crop_image, paste_swapped_image
+from CONSTANTS import *
 
 def pad_image(image, mask, pad_size, use_noise=False):
     '''
@@ -166,15 +168,15 @@ class RedresserSettings:
     fashion_model_path = "deepfashion2_yolov8s-seg.pt"  # downloads from Bingsu/adetailer
     hand_model_path = "hand_yolov9c.pt"  # downloads from Bingsu/adetailer
     default_options = {
-        "prompt": "",
+        "prompt": "a jjk girl looking at you<jjk>",
         "image": "images",
         # "mask": "seg/00000.png",
-        "guidance_scale": 30,
+        "guidance_scale": 3.5,
         "num_inference_steps": 8,
         # "negative_prompt": None,
         # "strength": None,
         # "clip_skip": 0,
-        "seed": -1,
+        "seed": 1741539723,
         "max_side": 1024,
         "center_crop": False,
         "padding": 0,
@@ -551,3 +553,17 @@ class SocketClient:
         print(f"{self.__class__.__name__} {self.port} sending object")
         self.client.send(data)
         self.client.close()
+
+
+def push_model_to_hub():
+    model = FluxTransformer2DModel.from_pretrained(
+                FLUX_CUSTOM_PATH,
+                # subfolder="transformer",
+                local_files_only=USE_LOCAL_FILES
+            )
+    print("pushing to hub")
+    model.push_to_hub("flux-turbo-nf4")
+
+
+# if __name__=="__main__":
+#     push_model_to_hub()

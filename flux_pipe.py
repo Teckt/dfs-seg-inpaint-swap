@@ -27,8 +27,11 @@ class MyFluxPipe:
 
         self.dtype = torch.bfloat16
         self.lora_path = LORA_PATH
-        self.flux_model_name = FLUX_FILL_PATH if fill else FLUX_PATH
-        self.flux_hyper_model_name = FLUX_FILL_HYPER_PATH if fill else FLUX_HYPER_PATH
+        if USE_CUSTOM_FLUX:
+            self.flux_model_name = FLUX_FILL_CUSTOM_PATH if fill else FLUX_CUSTOM_PATH
+        else:
+            self.flux_model_name = FLUX_FILL_PATH if fill else FLUX_PATH
+
         self.flux_transformer = None
         # load VAE
         # with tqdm(range(1), "Loading flux_vae"):
@@ -51,16 +54,17 @@ class MyFluxPipe:
             progress_bar.update()
             
         pipeline_args = {
-            "pretrained_model_name_or_path": self.flux_model_name,
+            "pretrained_model_name_or_path": FLUX_FILL_PATH if fill else FLUX_PATH,
             "transformer": None,
             "text_encoder": self.clip_L_text_encoder,
             "text_encoder_2": None,
             "torch_dtype": self.dtype,
             "local_files_only": USE_LOCAL_FILES
         }
+        # pipeline_args["device_map"] = "balanced"
         if USE_BNB:
             self.load_bnb_transformer_text_encoder_2()
-            # pipeline_args["device_map"] = "balanced"
+
         else:
             self.load_transformer_text_encoder_2()  # inits the transformer and text_encoder_2
         print("loading pipeline")
@@ -74,30 +78,20 @@ class MyFluxPipe:
         print("adding t5 encoder")
         self.pipe.text_encoder_2 = self.text_encoder_2
 
-        if FUSE_HYPER:
-            #
-            if not os.path.exists(f"{self.flux_hyper_model_name}/diffusion_pytorch_model.safetensors"):
-                # fuse lora before quantizing
-                self.fuse_hyper_lora()
-                #
-                #save the model here
-                with tqdm(range(3), "Saving transformer") as p:
-                    if not USE_BNB and USE_OPTIMUM_QUANTO:
-                        p.desc = "converting transformer to fp8"
-                        self.flux_transformer.to('cuda', dtype=torch.float8_e4m3fn)
-                    p.update()
-                    print(f"saving transformer to {self.flux_hyper_model_name}")
-                    p.desc = "saving transformer"
-                    self.flux_transformer.save_pretrained(self.flux_hyper_model_name, max_shard_size="10GB")
-                    p.update()
-                    if not USE_BNB and USE_OPTIMUM_QUANTO:
-                        p.desc = f"converting transformer back and dtype({self.dtype})"
-                        self.flux_transformer.to(dtype=self.dtype)
-                    p.update()
+        # fuse lora before quantizing
+        if FUSE_HYPER_LORA:
+            self.fuse_hyper_lora()
 
         # quantize
         if not USE_BNB and USE_OPTIMUM_QUANTO:
             self.quanto_quantize()
+
+        if SAVE_MODEL and not os.path.exists(
+                f"{SAVE_MODEL_PATH}/diffusion_pytorch_model.safetensors"):
+            # save the model here
+            with tqdm(range(1), "Saving transformer"):
+                print(f"saving transformer to {SAVE_MODEL_PATH}")
+                self.flux_transformer.save_pretrained(SAVE_MODEL_PATH, max_shard_size=SHARD_SIZE)
 
         self.pipe.vae.enable_slicing()
         # self.pipe.vae.enable_tiling()
@@ -113,24 +107,22 @@ class MyFluxPipe:
             VRAM = 0
             print("CUDA is not available.")
 
-        if VRAM < 22:
-            # Must use a cpu offload option if quantization is fp8 or higher for flux
+        if USE_OPTIMUM_QUANTO:
             if USE_CPU_OFFLOAD:
-                print("using cpu offload")
-                self.pipe.enable_model_cpu_offload()
-            else:
-                print("using sequential cpu offload")
-                self.pipe.enable_sequential_cpu_offload()
-        else:
-            if USE_CPU_OFFLOAD:
-                print("using cpu offload")
                 self.pipe.enable_model_cpu_offload()
             elif USE_SEQUENTIAL_CPU_OFFLOAD:
-                # disable cpu offload if quantized for 24GB
-                print("using sequential cpu offload")
                 self.pipe.enable_sequential_cpu_offload()
             else:
-                # must call to cuda if disabled cpu offload
+                self.pipe.to("cuda")
+        elif USE_BNB:
+            self.pipe.to("cuda")
+            self.pipe.enable_model_cpu_offload()
+        else:
+            if USE_CPU_OFFLOAD:
+                self.pipe.enable_model_cpu_offload()
+            elif USE_SEQUENTIAL_CPU_OFFLOAD:
+                self.pipe.enable_sequential_cpu_offload()
+            else:
                 self.pipe.to("cuda")
 
     def fuse_hyper_lora(self):
@@ -141,14 +133,16 @@ class MyFluxPipe:
             print("turbo already fused")
             return
         with tqdm(range(4), desc="Fusing hyper lora") as p:
-            self.pipe.load_lora_weights(
-                hf_hub_download(FUSE_HYPER_REPO, FUSE_HYPER_MODEL_FILE),
-                adapter_name="turbo"
-            )
+            if "turbo" in FUSE_HYPER_LORA_REPO.lower():
+                self.pipe.load_lora_weights(self.lora_path,
+                                            weight_name="turbo-a.safetensors",
+                                            adapter_name="turbo")
+            else:
+                self.pipe.load_lora_weights(
+                    hf_hub_download(FUSE_HYPER_LORA_REPO, FUSE_HYPER_LORA_MODEL_FILE),
+                    adapter_name="turbo"
+                )
 
-            # self.pipe.load_lora_weights(self.lora_path,
-            #                             weight_name="turbo-a.safetensors",
-            #                             adapter_name="turbo")
             p.update()
             p.desc = "Setting adapter"
             self.pipe.set_adapters(["turbo"], adapter_weights=[FUSE_HYPER_ALPHA])
@@ -166,19 +160,13 @@ class MyFluxPipe:
         self.fused_turbo = True
 
     def load_bnb_transformer_text_encoder_2(self):
-        if FUSE_HYPER:
-            if os.path.exists(self.flux_hyper_model_name):
-                model_name = self.flux_hyper_model_name
-            else:
-                model_name = self.flux_model_name
-        else:
-            model_name = self.flux_model_name
-        print(f"loading from {model_name}")
+
+        print(f"loading from {self.flux_model_name}")
 
         with tqdm(range(1), "Loading and quantizing t5 encoder") as progress_bar:
             quant_config = BitsAndBytesConfig(load_in_8bit=True)
             self.text_encoder_2 = T5EncoderModel.from_pretrained(
-                "black-forest-labs/FLUX.1-dev",
+                FLUX_PATH,
                 subfolder="text_encoder_2",
                 quantization_config=quant_config,
                 torch_dtype=self.dtype,
@@ -187,10 +175,10 @@ class MyFluxPipe:
             progress_bar.update()
 
         with tqdm(range(1), "Loading and quantizing transformer") as progress_bar:
-            quant_config = DiffusersBitsAndBytesConfig(load_in_8bit=True)
+            quant_config = DiffusersBitsAndBytesConfig(load_in_4bit=True)
             self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-                model_name,
-                subfolder="transformer",
+                self.flux_model_name,
+                # subfolder="transformer",
                 quantization_config=quant_config,
                 torch_dtype=self.dtype,
                 local_files_only=USE_LOCAL_FILES
@@ -200,47 +188,22 @@ class MyFluxPipe:
     def load_transformer_text_encoder_2(self):
         # load and quantize transformer
 
-        with tqdm(range(4), "Loading transformer") as progress_bar:
-            if FUSE_HYPER:
-                if os.path.exists(self.flux_hyper_model_name):
-                    model_name = self.flux_hyper_model_name
-                else:
-                    model_name = self.flux_model_name
-            else:
-                model_name = self.flux_model_name
-            print(f"loading from {model_name}")
-            if self.is_fill:
-                self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-                    model_name, subfolder="transformer",
-                    # "flux-fill-fp8", subfolder="transformer",
-                    torch_dtype=self.dtype, local_files_only=True if FUSE_HYPER and os.path.exists(self.flux_hyper_model_name) else USE_LOCAL_FILES)
-            else:
-                # self.flux_transformer = FluxTransformer2DModel.from_single_file(
-                #     "C:\\Users\\teckt\\.cache\\huggingface\\hub\\models--Kijai--flux-fp8\\snapshots\\e77f550e3fe8be226884d5944a40abdbe4735ff5\\flux1-dev-fp8.safetensors",
-                #     subfolder="transformer",
-                #     torch_dtype=self.dtype, local_files_only=True)
-                self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-                    model_name, subfolder="transformer",
-                    # "flux-fp8", subfolder="transformer",
-                    torch_dtype=self.dtype, local_files_only=True if FUSE_HYPER and os.path.exists(self.flux_hyper_model_name) else USE_LOCAL_FILES)
-            progress_bar.update()
+        with tqdm(range(1), "Loading transformer") as progress_bar:
+            print(f"loading from {self.flux_model_name}")
+            # try:
+            #     self.flux_transformer = FluxTransformer2DModel.from_pretrained(
+            #         self.flux_model_name, subfolder="transformer",
+            #         torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
+            # except OSError:
+            self.flux_transformer = FluxTransformer2DModel.from_pretrained(
+                self.flux_model_name,
+                torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
 
-            # if not self.is_fill:
-            #     progress_bar.set_description(f"fusing turbo-alpha lora before quantization")
-            #     self.fuse_turbo()
-            progress_bar.update()
-            # progress_bar.set_description(f"quantizing flux_transformer to qfloat8")
+            # self.flux_transformer = FluxTransformer2DModel.from_single_file(
+            #     "C:\\Users\\teckt\\.cache\\huggingface\\hub\\models--Kijai--flux-fp8\\snapshots\\e77f550e3fe8be226884d5944a40abdbe4735ff5\\flux1-dev-fp8.safetensors",
+            #     subfolder="transformer",
+            #     torch_dtype=self.dtype, local_files_only=True)
 
-            # if not fill:
-
-            # quantize(self.flux_transformer, weights=qfloat8)
-            progress_bar.update()
-            # progress_bar.set_description(f"freezing flux_transformer")
-            # if not fill:
-            # freeze(self.flux_transformer)
-            progress_bar.update()
-
-            # self.flux_transformer.to(self.dtype)
 
         # load and quantize t5
         with tqdm(total=1, desc="loading text_encoder_2") as progress_bar:
@@ -371,7 +334,8 @@ class MyFluxPipe:
         open_bracket_idx = 0
         closed_bracket_idx = 0
         while True:
-
+            if len(prompt_dict["current_prompt"]) == 0:
+                break
             for idx, char in enumerate(prompt_dict["current_prompt"]):
                 if not inside_brackets:
                     # start looking for the first open bracket you come across

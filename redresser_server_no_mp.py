@@ -1,7 +1,6 @@
 import datetime
 import os
 import time
-from multiprocessing import Queue, Process
 
 from cog import CogSettings, VideoGenerator
 from redresser_utils import SocketServer, SocketClient
