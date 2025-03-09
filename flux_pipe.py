@@ -232,20 +232,20 @@ class MyFluxPipe:
             # self.flux_transformer.to(self.dtype)
 
         # load and quantize t5
-        with tqdm(total=3, desc="loading text_encoder_2") as progress_bar:
+        with tqdm(total=1, desc="loading text_encoder_2") as progress_bar:
             self.text_encoder_2 = T5EncoderModel.from_pretrained(
                 FLUX_PATH,
                 subfolder="text_encoder_2",
                 torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
             progress_bar.update()
-            progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
-            # if not fill:
-            quantize(self.text_encoder_2, weights=qfloat8)
-            progress_bar.update()
-            progress_bar.set_description("freezing text_encoder_2")
-            # if not fill:
-            freeze(self.text_encoder_2)
-            progress_bar.update()
+            # progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
+            # # if not fill:
+            # quantize(self.text_encoder_2, weights=qfloat8)
+            # progress_bar.update()
+            # progress_bar.set_description("freezing text_encoder_2")
+            # # if not fill:
+            # freeze(self.text_encoder_2)
+            # progress_bar.update()
 
     def quanto_quantize(self):
         # load and quantize transformer
