@@ -197,6 +197,7 @@ class MyFluxPipe:
             # except OSError:
             self.flux_transformer = FluxTransformer2DModel.from_pretrained(
                 self.flux_model_name,
+                subfolder="transformer",
                 torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
 
             # self.flux_transformer = FluxTransformer2DModel.from_single_file(
