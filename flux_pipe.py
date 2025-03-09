@@ -49,8 +49,7 @@ class MyFluxPipe:
                 torch_dtype=self.dtype,
                 local_files_only=USE_LOCAL_FILES)
             progress_bar.update()
-
-        self.load_transformer_text_encoder_2()  # inits the transformer and text_encoder_2
+            
         pipeline_args = {
             "pretrained_model_name_or_path": self.flux_model_name,
             "transformer": None,
@@ -59,17 +58,21 @@ class MyFluxPipe:
             "torch_dtype": self.dtype,
             "local_files_only": USE_LOCAL_FILES
         }
+        if USE_BNB:
+            self.load_bnb_transformer_text_encoder_2()
+            pipeline_args["device_map"] = "auto"
+        else:
+            self.load_transformer_text_encoder_2()  # inits the transformer and text_encoder_2
         print("loading pipeline")
         if fill:
             print("loading pipeline")
             self.pipe = FluxFillPipeline.from_pretrained(**pipeline_args)
         else:
             self.pipe = FluxPipeline.from_pretrained(**pipeline_args)
-
-        print("adding transformer")
-        self.pipe.transformer = self.flux_transformer
-        print("adding t5 encoder")
-        self.pipe.text_encoder_2 = self.text_encoder_2
+        # print("adding transformer")
+        # self.pipe.transformer = self.flux_transformer
+        # print("adding t5 encoder")
+        # self.pipe.text_encoder_2 = self.text_encoder_2
 
         if FUSE_HYPER:
             #
@@ -93,7 +96,7 @@ class MyFluxPipe:
                     p.update()
 
         # quantize
-        if USE_OPTIMUM_QUANTO:
+        if not USE_BNB and USE_OPTIMUM_QUANTO:
             self.quanto_quantize()
 
         self.pipe.vae.enable_slicing()
@@ -162,7 +165,7 @@ class MyFluxPipe:
             p.update()
         self.fused_turbo = True
 
-    def load_bnb_pipe(self):
+    def load_bnb_transformer_text_encoder_2(self):
 
         with tqdm(range(1), "Loading and quantizing t5 encoder") as progress_bar:
             quant_config = BitsAndBytesConfig(load_in_8bit=True)
@@ -170,7 +173,7 @@ class MyFluxPipe:
                 "black-forest-labs/FLUX.1-dev",
                 subfolder="text_encoder_2",
                 quantization_config=quant_config,
-                torch_dtype=torch.float16,
+                torch_dtype=self.dtype,
                 local_files_only=USE_LOCAL_FILES
             )
             progress_bar.update()
@@ -181,7 +184,7 @@ class MyFluxPipe:
                 self.flux_model_name,
                 subfolder="transformer",
                 quantization_config=quant_config,
-                torch_dtype=torch.float16,
+                torch_dtype=self.dtype,
                 local_files_only=USE_LOCAL_FILES
             )
             progress_bar.update()
