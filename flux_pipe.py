@@ -190,15 +190,15 @@ class MyFluxPipe:
 
         with tqdm(range(1), "Loading transformer") as progress_bar:
             print(f"loading from {self.flux_model_name}")
-            # try:
-            #     self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-            #         self.flux_model_name, subfolder="transformer",
-            #         torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
-            # except OSError:
-            self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-                self.flux_model_name,
-                subfolder="transformer",
-                torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
+            try:
+                self.flux_transformer = FluxTransformer2DModel.from_pretrained(
+                    self.flux_model_name,
+                    torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
+            except OSError:
+                self.flux_transformer = FluxTransformer2DModel.from_pretrained(
+                    self.flux_model_name,
+                    subfolder="transformer",
+                    torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
 
             # self.flux_transformer = FluxTransformer2DModel.from_single_file(
             #     "C:\\Users\\teckt\\.cache\\huggingface\\hub\\models--Kijai--flux-fp8\\snapshots\\e77f550e3fe8be226884d5944a40abdbe4735ff5\\flux1-dev-fp8.safetensors",
