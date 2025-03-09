@@ -82,17 +82,17 @@ class MyFluxPipe:
                 #
                 #save the model here
                 with tqdm(range(3), "Saving transformer") as p:
-
-                    p.desc = "converting transformer to fp8"
-                    self.flux_transformer.to('cuda', dtype=torch.float8_e4m3fn)
+                    if not USE_BNB:
+                        p.desc = "converting transformer to fp8"
+                        self.flux_transformer.to('cuda', dtype=torch.float8_e4m3fn)
                     p.update()
 
                     p.desc = "saving transformer"
-                    self.flux_transformer.save_pretrained("flux-fp8", max_shard_size="16GB")
+                    self.flux_transformer.save_pretrained(self.flux_hyper_model_name, max_shard_size="16GB")
                     p.update()
-
-                    p.desc = f"converting transformer back and dtype({self.dtype})"
-                    self.flux_transformer.to(dtype=self.dtype)
+                    if not USE_BNB:
+                        p.desc = f"converting transformer back and dtype({self.dtype})"
+                        self.flux_transformer.to(dtype=self.dtype)
                     p.update()
 
         # quantize
@@ -166,6 +166,14 @@ class MyFluxPipe:
         self.fused_turbo = True
 
     def load_bnb_transformer_text_encoder_2(self):
+        if FUSE_HYPER:
+            if os.path.exists(self.flux_hyper_model_name):
+                model_name = self.flux_hyper_model_name
+            else:
+                model_name = self.flux_model_name
+        else:
+            model_name = self.flux_model_name
+        print(f"loading from {model_name}")
 
         with tqdm(range(1), "Loading and quantizing t5 encoder") as progress_bar:
             quant_config = BitsAndBytesConfig(load_in_8bit=True)
@@ -181,7 +189,7 @@ class MyFluxPipe:
         with tqdm(range(1), "Loading and quantizing transformer") as progress_bar:
             quant_config = DiffusersBitsAndBytesConfig(load_in_8bit=True)
             self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-                self.flux_model_name,
+                model_name,
                 subfolder="transformer",
                 quantization_config=quant_config,
                 torch_dtype=self.dtype,

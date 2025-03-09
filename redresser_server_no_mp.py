@@ -332,7 +332,7 @@ def run(r="flux", is_server=True):
                     pipeline = get_pipeline(r, is_server)
 
                 result = run_redresser_flux_process(
-                    pipeline=pipeline, options=options,
+                    pipeline=pipeline, options=settings.options,
                     img_client=img_client, pipe_server=pipe_server)
 
 

@@ -11,7 +11,7 @@ USE_OPTIMUM_QUANTO=False  # quantize with optimum quanto
 USE_CPU_OFFLOAD=True  # vram savings
 USE_SEQUENTIAL_CPU_OFFLOAD=False  # bigger vram savings
 
-FUSE_HYPER=False  # whether to fuse hyper lora with transformer
+FUSE_HYPER=True  # whether to fuse hyper lora with transformer
 FLUX_FILL_HYPER_PATH='flux-fill-fp8'  # the pretrained path to the fused model
 FLUX_HYPER_PATH='flux-fp8'  # the pretrained path to the fused model
 FUSE_HYPER_ALPHA=0.125  # set alpha for turbo lora
