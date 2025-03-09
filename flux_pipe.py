@@ -238,13 +238,13 @@ class MyFluxPipe:
                 subfolder="text_encoder_2",
                 torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
             progress_bar.update()
-            # progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
+            progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
             # if not fill:
-            #     quantize(self.text_encoder_2, weights=qfloat8)
+            quantize(self.text_encoder_2, weights=qfloat8)
             progress_bar.update()
-            # progress_bar.set_description("freezing text_encoder_2")
+            progress_bar.set_description("freezing text_encoder_2")
             # if not fill:
-            #     freeze(self.text_encoder_2)
+            freeze(self.text_encoder_2)
             progress_bar.update()
 
     def quanto_quantize(self):
