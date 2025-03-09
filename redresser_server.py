@@ -10,8 +10,6 @@ from redresser_sd15 import RedresserSD15, ImageGeneratorSD15
 from redresser_utils import RedresserSettings
 from fire_functions import FirestoreFunctions
 from CONSTANTS import *
-import torch
-torch.multiprocessing.set_start_method('spawn')
 
 class RepaintJobProcesser:
 
