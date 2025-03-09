@@ -60,7 +60,7 @@ class MyFluxPipe:
         }
         if USE_BNB:
             self.load_bnb_transformer_text_encoder_2()
-            pipeline_args["device_map"] = "auto"
+            pipeline_args["device_map"] = "balanced"
         else:
             self.load_transformer_text_encoder_2()  # inits the transformer and text_encoder_2
         print("loading pipeline")
