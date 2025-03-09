@@ -16,7 +16,7 @@
 
 # source .venv/bin/activate  # activate virtual environment
 
-# clone dfs-seg-inpaint-swap
+# clone dfs-seg-inpaint-swaps
 
 # cd
 
