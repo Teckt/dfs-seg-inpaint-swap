@@ -157,6 +157,10 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
     # determine which pipeline to load
     if pipeline.is_server:
         pipeline.settings.map_dfs_options(options)
+        # all models should be fused with either hyper or turbo so keep this at 8
+        if pipeline.settings.options["num_inference_steps"] != 8:
+            print("setting num_inference_steps to 8 for turbo")
+            pipeline.settings.options["num_inference_steps"] = 8
         print("mapped settings", pipeline.settings.options)
     else:
         pipeline.settings.options = options.copy()
