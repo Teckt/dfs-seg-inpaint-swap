@@ -69,10 +69,10 @@ class MyFluxPipe:
             self.pipe = FluxFillPipeline.from_pretrained(**pipeline_args)
         else:
             self.pipe = FluxPipeline.from_pretrained(**pipeline_args)
-        # print("adding transformer")
-        # self.pipe.transformer = self.flux_transformer
-        # print("adding t5 encoder")
-        # self.pipe.text_encoder_2 = self.text_encoder_2
+        print("adding transformer")
+        self.pipe.transformer = self.flux_transformer
+        print("adding t5 encoder")
+        self.pipe.text_encoder_2 = self.text_encoder_2
 
         if FUSE_HYPER:
             #
