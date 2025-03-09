@@ -113,14 +113,18 @@ class MyFluxPipe:
         if VRAM < 22:
             # Must use a cpu offload option if quantization is fp8 or higher for flux
             if USE_CPU_OFFLOAD:
+                print("using cpu offload")
                 self.pipe.enable_model_cpu_offload()
             else:
+                print("using sequential cpu offload")
                 self.pipe.enable_sequential_cpu_offload()
         else:
             if USE_CPU_OFFLOAD:
+                print("using cpu offload")
                 self.pipe.enable_model_cpu_offload()
             elif USE_SEQUENTIAL_CPU_OFFLOAD:
                 # disable cpu offload if quantized for 24GB
+                print("using sequential cpu offload")
                 self.pipe.enable_sequential_cpu_offload()
             else:
                 # must call to cuda if disabled cpu offload
