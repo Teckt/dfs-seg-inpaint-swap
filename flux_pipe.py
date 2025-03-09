@@ -82,15 +82,15 @@ class MyFluxPipe:
                 #
                 #save the model here
                 with tqdm(range(3), "Saving transformer") as p:
-                    if not USE_BNB:
+                    if not USE_BNB and USE_OPTIMUM_QUANTO:
                         p.desc = "converting transformer to fp8"
                         self.flux_transformer.to('cuda', dtype=torch.float8_e4m3fn)
                     p.update()
-
+                    print(f"saving transformer to {self.flux_hyper_model_name}")
                     p.desc = "saving transformer"
-                    self.flux_transformer.save_pretrained(self.flux_hyper_model_name, max_shard_size="16GB")
+                    self.flux_transformer.save_pretrained(self.flux_hyper_model_name, max_shard_size="10GB")
                     p.update()
-                    if not USE_BNB:
+                    if not USE_BNB and USE_OPTIMUM_QUANTO:
                         p.desc = f"converting transformer back and dtype({self.dtype})"
                         self.flux_transformer.to(dtype=self.dtype)
                     p.update()
