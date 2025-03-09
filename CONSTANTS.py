@@ -1,6 +1,6 @@
 import os
 
-USE_LOCAL_FILES=True  # whether to download models
+USE_LOCAL_FILES=False  # whether to download models
 TEXT_ENCODER_CLIP_L_PATH='openai/clip-vit-large-patch14'
 FLUX_FILL_PATH='black-forest-labs/FLUX.1-Fill-dev'
 FLUX_PATH='black-forest-labs/FLUX.1-dev'
