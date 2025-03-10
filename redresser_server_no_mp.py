@@ -1,5 +1,6 @@
 import datetime
 import os
+import sys
 import time
 
 from cog import CogSettings, VideoGenerator
@@ -165,6 +166,7 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
             print("setting guidance_scale to 3.5 for turbo")
             pipeline.settings.options["guidance_scale"] = 3.5
         print("mapped settings", pipeline.settings.options)
+        sys.stdout.flush()
     else:
         pipeline.settings.options = options.copy()
         # need absolute path for the input image
@@ -175,10 +177,12 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
                 image_file_path)
             pipeline.settings.options["image"] = absolute_path
         print("passed settings", pipeline.settings.options)
+        sys.stdout.flush()
 
     # pass options to image processor
     if isinstance(pipeline, Redresser):
         print("passing settings to image processor")
+        sys.stdout.flush()
         while True:
             try:
                 img_client.put(pipeline.settings)
@@ -192,30 +196,37 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
             for file_index, file in enumerate(os.listdir(image_dir)):
                 if file.endswith(".jpg") or file.endswith(".png") or file.endswith(".webp") or file.endswith(".jfif"):
                     print(f"[{file_index}] waiting for image processor outputs for file {file}")
+                    sys.stdout.flush()
                     im_outputs = pipe_server.get()
 
                     if im_outputs is None:
                         return False
 
                     print(f"[{file_index}] parsing image processor outputs for pipe")
+                    sys.stdout.flush()
                     parsed_im_outputs = pipeline.parse_image_processor_outputs(*im_outputs)
 
                     print(f"[{file_index}] running pipeline")
+                    sys.stdout.flush()
                     pipeline.run(*parsed_im_outputs)
         else:
             print("waiting for image processor outputs")
+            sys.stdout.flush()
             im_outputs = pipe_server.get()
 
             if im_outputs is None:
                 return False
 
             print("parsing image processor outputs for pipe")
+            sys.stdout.flush()
             parsed_im_outputs = pipeline.parse_image_processor_outputs(*im_outputs)
 
             print("running pipeline")
+            sys.stdout.flush()
             pipeline.run(*parsed_im_outputs)
     else:
         print("running pipeline")
+        sys.stdout.flush()
         pipeline.run()
 
     return True
@@ -268,6 +279,7 @@ def run(r="flux", is_server=True):
                     firestoreFunctions.start_job(job_type=job_type, job=locked_job)
                     print(f'job started! keeping same job type ({job_type}) for next loop, sleeping 1 second...')
                     job_order -= 1
+                    sys.stdout.flush()
                     time.sleep(1)
                     continue
                 else:
@@ -277,6 +289,7 @@ def run(r="flux", is_server=True):
                         firestoreFunctions.lock_job(job_type=job_type, job=job_to_lock)
                         print(f'job locked! keeping same job type ({job_type}) for next loop, sleeping 1 second...')
                         job_order -= 1
+                        sys.stdout.flush()
                         time.sleep(1)
                         continue
                     else:
@@ -286,6 +299,7 @@ def run(r="flux", is_server=True):
                         # Format and display the current time with AM/PM
                         formatted_time = current_time.strftime("%I:%M:%S %p")
                         print(f'\r[{formatted_time}]No jobs available for ({job_type}), sleeping 5 second...', end="")
+                        sys.stdout.flush()
                         time.sleep(5)
                         continue
 
@@ -305,6 +319,7 @@ def run(r="flux", is_server=True):
                     pass
 
             print("options", options)
+            sys.stdout.flush()
             # print("image_path", image_path)
             # run the pipeline with options inputs and runs the image processor if needed
             # load pipeline here to test imgage processor
@@ -317,13 +332,11 @@ def run(r="flux", is_server=True):
 
             if not result:
                 print("job failed?")
-                print("sleeping 5...")
-                time.sleep(5)
             else:
                 job_processor.complete_job()
                 print("job completed")
-                print("sleeping 5...")
-                time.sleep(5)
+            sys.stdout.flush()
+            time.sleep(5)
     else:
         if r == "cog-i2v":
             settings = CogSettings()
@@ -355,5 +368,6 @@ if __name__ == "__main__":
     if r not in pipe_ids:
         raise ValueError("r must be in one of pipe_ids:", pipe_ids)
     print(f"running with {r},is_server={is_server}")
+    sys.stdout.flush()
     # run("cog-i2v", is_server=False)
     run(r, is_server=is_server)

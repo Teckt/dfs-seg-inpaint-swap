@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 from PIL import Image
 import numpy as np
@@ -64,10 +65,10 @@ class MyFluxPipe:
         # pipeline_args["device_map"] = "balanced"
         if USE_BNB:
             self.load_bnb_transformer_text_encoder_2()
-
         else:
             self.load_transformer_text_encoder_2()  # inits the transformer and text_encoder_2
         print("loading pipeline")
+        sys.stdout.flush()
         if fill:
             print("loading pipeline")
             self.pipe = FluxFillPipeline.from_pretrained(**pipeline_args)
@@ -77,7 +78,7 @@ class MyFluxPipe:
         self.pipe.transformer = self.flux_transformer
         print("adding t5 encoder")
         self.pipe.text_encoder_2 = self.text_encoder_2
-
+        sys.stdout.flush()
         # fuse lora before quantizing
         if FUSE_HYPER_LORA:
             self.fuse_hyper_lora()
@@ -106,7 +107,7 @@ class MyFluxPipe:
         else:
             VRAM = 0
             print("CUDA is not available.")
-
+        sys.stdout.flush()
         if USE_OPTIMUM_QUANTO:
             if USE_CPU_OFFLOAD:
                 self.pipe.enable_model_cpu_offload()

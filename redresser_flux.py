@@ -1,4 +1,5 @@
 import random
+import sys
 from multiprocessing import Queue, Process
 
 import os
@@ -228,7 +229,7 @@ class ImageGenerator:
 
         if generator is not None:
             args["generator"] = generator
-
+        sys.stdout.flush()
         with torch.inference_mode():
             output = self.pipe.pipe(
                 **args
@@ -251,7 +252,7 @@ class ImageGenerator:
             print("image_idx", image_idx, "image", image, image.info)
             image.save(redresser_output_file_path)
             # image.save(f"{time_id}_{str(image_idx).zfill(5)}.png")
-        pass
+        sys.stdout.flush()
 
     def process_outputs(self, outputs):
         final_pil_images = []
