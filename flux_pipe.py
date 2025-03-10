@@ -296,6 +296,7 @@ class MyFluxPipe:
         # filter the names for periods or will throw an error when loading the lora
         for adapter_name, adapter_scale in loras.items():
             adapter_name_filtered_for_periods = adapter_name.replace(".", "dot")
+            adapter_name_filtered_for_periods = adapter_name_filtered_for_periods.replace("/", "slash")
             loras_filtered_names[adapter_name] = adapter_name_filtered_for_periods
 
         for adapter_name, adapter_scale in loras.items():
@@ -308,6 +309,12 @@ class MyFluxPipe:
                                           weight_name=f"{adapter_name}.safetensors",
                                           adapter_name=adapter_name_filtered_for_periods)
             else:
+                # try to download from huggingface
+                print("Loading lora into pipe from", lora_file)
+                self.pipe.load_lora_weights(adapter_name,
+                                            adapter_name=adapter_name_filtered_for_periods)
+
+
                 print("WARNING:", lora_file, "does not exist.", "Ignoring.")
                 continue
 

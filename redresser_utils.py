@@ -7,7 +7,7 @@ from PIL import Image
 import torch
 import os
 
-from diffusers import FluxTransformer2DModel
+from diffusers import FluxTransformer2DModel, CogVideoXTransformer3DModel, GGUFQuantizationConfig
 
 from tf_free_functions import align_crop_image, paste_swapped_image
 from CONSTANTS import *
@@ -556,6 +556,12 @@ class SocketClient:
 
 
 def push_model_to_hub():
+    transformer = CogVideoXTransformer3DModel.from_single_file(
+        'https://huggingface.co/Kijai/CogVideoX_GGUF/resolve/main/CogVideoX_5b_1_5_I2V_GGUF_Q4_0.safetensors',
+        quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
+        torch_dtype=torch.bfloat16,
+    )
+
     model = FluxTransformer2DModel.from_pretrained(
                 FLUX_CUSTOM_PATH,
                 # subfolder="transformer",
