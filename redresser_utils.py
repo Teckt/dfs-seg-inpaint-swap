@@ -7,7 +7,8 @@ from PIL import Image
 import torch
 import os
 
-from diffusers import FluxTransformer2DModel, CogVideoXTransformer3DModel, GGUFQuantizationConfig
+from diffusers import FluxTransformer2DModel, CogVideoXTransformer3DModel, GGUFQuantizationConfig, BitsAndBytesConfig
+from transformers import UMT5EncoderModel, T5EncoderModel
 
 from tf_free_functions import align_crop_image, paste_swapped_image
 from CONSTANTS import *
@@ -168,7 +169,7 @@ class RedresserSettings:
     fashion_model_path = "deepfashion2_yolov8s-seg.pt"  # downloads from Bingsu/adetailer
     hand_model_path = "hand_yolov9c.pt"  # downloads from Bingsu/adetailer
     default_options = {
-        "prompt": "a jjk girl looking at you<jjk>",
+        "prompt": "",
         "image": "images",
         # "mask": "seg/00000.png",
         "guidance_scale": 3.5,
@@ -176,7 +177,7 @@ class RedresserSettings:
         # "negative_prompt": None,
         # "strength": None,
         # "clip_skip": 0,
-        "seed": 1741539723,
+        "seed": -1,
         "max_side": 1024,
         "center_crop": False,
         "padding": 0,
@@ -185,7 +186,7 @@ class RedresserSettings:
         "keep_face": True,
         # "face_mask_scale": 1.0,
         # "use_faceswap": False,
-        "runs": 1,  # how many times to run with these settings
+        "runs": 4,  # how many times to run with these settings
     }
 
     def __init__(self, ):
@@ -258,7 +259,7 @@ class RedresserSettings:
                     self.options[key] = float(self.options[key])
                 except:
                     self.options[key] = self.__class__.default_options[key]
-            if key in ['num_inference_steps', 'max_side', 'height', 'width', "strength", "clip_skip", "seed", "SEGMENT_ID"]:
+            if key in ['max_area', 'num_frames', 'num_inference_steps', 'max_side', 'height', 'width', "strength", "clip_skip", "seed", "SEGMENT_ID"]:
                 try:
                     self.options[key] = int(self.options[key])
                 except:
@@ -556,20 +557,37 @@ class SocketClient:
 
 
 def push_model_to_hub():
-    transformer = CogVideoXTransformer3DModel.from_single_file(
-        'https://huggingface.co/Kijai/CogVideoX_GGUF/resolve/main/CogVideoX_5b_1_5_I2V_GGUF_Q4_0.safetensors',
-        quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
-        torch_dtype=torch.bfloat16,
-    )
-
+    # from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
+    # cog_model_id = "D:/huggingface/models--THUDM--CogVideoX-5b-I2V/snapshots/c5c783ca1606069b9996dc56f207cc2e681691ed"
+    #
+    # quant_config = DiffusersBitsAndBytesConfig(load_in_4bit=True)
+    # model = CogVideoXTransformer3DModel.from_pretrained(
+    #     cog_model_id,
+    #     subfolder="transformer",
+    #     # 'https://huggingface.co/Kijai/CogVideoX_GGUF/resolve/main/CogVideoX_5b_1_5_I2V_GGUF_Q4_0.safetensors',
+    #     quantization_config=quant_config,
+    # )
+    # print("saving model")
+    # model.save_pretrained("cogvideox-nf4", max_shard_size=SHARD_SIZE)
+    # model = FluxTransformer2DModel.from_pretrained(
+    #             FLUX_CUSTOM_PATH,
+    #             # subfolder="transformer",
+    #             local_files_only=USE_LOCAL_FILES
+    #         )
+    # print("pushing to hub")
+    # model.push_to_hub("cogvideox-nf4")
+    quant_config = BitsAndBytesConfig(load_in_4bit=True)
     model = FluxTransformer2DModel.from_pretrained(
-                FLUX_CUSTOM_PATH,
-                # subfolder="transformer",
-                local_files_only=USE_LOCAL_FILES
-            )
-    print("pushing to hub")
-    model.push_to_hub("flux-turbo-nf4")
+        "flux-fp8",
+        subfolder="transformer",
+        quantization_config=quant_config,
+        torch_dtype=torch.bfloat16, local_files_only=True)
+    # model.to("cuda")
+    model.save_pretrained("flux-nf4", max_shard_size="25GB")
+
+    # print("pushing to hub")
+    # model.push_to_hub("flux-fp8", max_shard_size="16GB")
 
 
-# if __name__=="__main__":
-#     push_model_to_hub()
+if __name__=="__main__":
+    push_model_to_hub()

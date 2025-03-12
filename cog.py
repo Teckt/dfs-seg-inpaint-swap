@@ -1,7 +1,7 @@
 import os
 import subprocess
 import time
-
+from CONSTANTS import *
 import PIL.Image as Image
 import numpy as np
 import cv2
@@ -61,8 +61,8 @@ def run_ffmpeg_optical_flow(input_video: str, output_video: str, fps: int = 60):
 class CogSettings(RedresserSettings):
 
     default_options = {
-        "prompt": "",
-        "image": "images",
+        "prompt": "a girl throwing her hands in the air laughing",
+        "image": "images/gehlee.png",
         "use_dynamic_cfg": False,
         "guidance_scale": 6.0,
         "num_inference_steps": 20,
@@ -90,6 +90,58 @@ class VideoGenerator:
         self.dtype = torch.bfloat16
         self.flux_model_id = "black-forest-labs/FLUX.1-dev"  # Flux dev
         self.cog_model_id = "THUDM/CogVideoX-5b-I2V"  # Cog 5b I2V
+
+        # self.load_quanto_pipe()
+        self.load_bnb_pipe()
+
+        self.pipe.enable_model_cpu_offload()
+        self.pipe.vae.enable_slicing()
+        self.pipe.vae.enable_tiling()
+
+    def load_bnb_pipe(self):
+        self.cog_model_id = "D:/huggingface/models--THUDM--CogVideoX-5b-I2V/snapshots/c5c783ca1606069b9996dc56f207cc2e681691ed"
+        with tqdm(range(3), "preparing cog pipeline") as p:
+            p.set_description("Loading text encoder 2")
+            self.text_encoder_2 = T5EncoderModel.from_pretrained(self.flux_model_id, subfolder="text_encoder_2",
+                                                                 torch_dtype=self.dtype, local_files_only=True)
+            p.update()
+            p.set_description("Loading cog pipeline")
+
+            self.pipe = CogVideoXImageToVideoPipeline.from_pretrained(
+                self.cog_model_id,
+                text_encoder=self.text_encoder_2,
+                transformer=None,
+                torch_dtype=self.dtype, local_files_only=True)
+            p.update()
+            p.set_description("Loading cog transformer")
+            self.transformer = CogVideoXTransformer3DModel.from_pretrained(
+                "cogvideox-nf4",
+                torch_dtype=self.dtype,
+            )
+            self.pipe.transformer = self.transformer
+            p.update()
+
+            # p.desc = "quantize cog transformer"
+            # quantize(self.pipe.text_encoder, weights=qfloat8)
+            # p.update()
+            # p.desc = "freeze cog transformer"
+            # freeze(self.pipe.text_encoder)
+            # p.update()
+            # # quantize cog transformer
+            # p.desc = "quantize cog transformer"
+            # quantize(self.pipe.transformer, weights=qfloat8)
+            # p.update()
+            # p.desc = "freeze cog transformer"
+            # freeze(self.pipe.transformer)
+            # p.update()
+            # quantize cogx vae
+            # p.desc = "quantize cog vae"
+            # quantize(self.pipe.vae, weights=qfloat8)
+            # p.update()
+            # p.desc = "freeze cog vae"
+            # freeze(self.pipe.vae)
+            # p.update()
+    def load_quanto_pipe(self):
         # self.cog_model_id = "D:/huggingface/models--THUDM--CogVideoX-5b-I2V/snapshots/c5c783ca1606069b9996dc56f207cc2e681691ed"
         with tqdm(range(8), "preparing cog pipeline") as p:
             p.set_description("Loading text encoder 2")
@@ -100,7 +152,7 @@ class VideoGenerator:
             self.pipe = CogVideoXImageToVideoPipeline.from_pretrained(
                 self.cog_model_id,
                 text_encoder=self.text_encoder_2,
-                torch_dtype=self.dtype, local_files_only=True)
+                torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
             p.update()
             # p.set_description("Loading cog transformer")
             # self.transformer = CogVideoXTransformer3DModel.from_single_file(
@@ -132,10 +184,6 @@ class VideoGenerator:
             p.desc = "freeze cog vae"
             freeze(self.pipe.vae)
             p.update()
-
-        self.pipe.enable_model_cpu_offload()
-        self.pipe.vae.enable_slicing()
-        self.pipe.vae.enable_tiling()
 
     def run(self):
         image_path = self.settings.options.get("image")
@@ -215,34 +263,43 @@ class VideoGenerator:
                 frame.save(f"{result_dir}/{str(f_idx).zfill(5)}.png")
 
     def load_and_prepare_image(self, img_path):
-        image = cv2.imread(img_path)
-        image = np.array(image)
-        h, w = image.shape[:2]
+        """
+        Resizes and pads image, maintaining aspect ratio of max_w and max_h
+        :param img_path: str file path
+        :return: PIL.Image in max_w x max_h
+        """
         max_h = 480
         max_w = 720
 
+        image = cv2.imread(img_path)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = np.array(image)
+        h, w = image.shape[:2]
+        print("load_and_prepare_image", "h, w", h, w)
+
         if h > w:  # vertical
-            ratio = 480 / 720
+            ratio = w / h
             target_h = 480
-            target_w = int(ratio * target_h)
+            target_w = int(target_h/ratio)
+            print("load_and_prepare_image", "target_w", target_w, "target_h", target_h)
             image = cv2.resize(image, (target_w, target_h))
         elif w > h:  # horizontal
-            ratio = 720 / 480
+            ratio = w / h
             target_w = 720
-            target_h = int(ratio * target_w)
+            target_h = int(target_w/ratio)
+            print("load_and_prepare_image", "target_w", target_w, "target_h", target_h)
             image = cv2.resize(image, (target_w, target_h))
         else:  # square
+            print("load_and_prepare_image", "target_w", max_h, "target_h", max_h)
             image = cv2.resize(image, (max_h, max_h))
 
-        ratio = 720 / 480
-        target_w = int(ratio * h)
-        cog_image = np.zeros(shape=(h, target_w, 3), dtype=np.uint8)
-        center_x, center_y = target_w / 2, h / 2
-        x1 = int(center_x - w / 2)
-        x2 = x1 + w
-        y1 = 0
-        y2 = h
-        cog_image[y1:y2, x1:x2, :] = image
+        h, w = image.shape[:2]
+        x1 = (max_w - w) // 2  # difference between widths / 2
+        y1 = (max_h - h) // 2  # difference between heights / 2
+
+        cog_image = np.zeros(shape=(max_h, max_w, 3), dtype=np.uint8)
+
+        cog_image[y1:y1+h, x1:x1+w, :] = image
         return Image.fromarray(cog_image)
 
 

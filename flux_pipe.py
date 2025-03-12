@@ -1,6 +1,8 @@
 import os
 import sys
 import time
+
+import huggingface_hub
 from PIL import Image
 import numpy as np
 import cv2
@@ -53,6 +55,13 @@ class MyFluxPipe:
                 torch_dtype=self.dtype,
                 local_files_only=USE_LOCAL_FILES)
             progress_bar.update()
+
+        with tqdm(total=1, desc="loading text_encoder_2") as progress_bar:
+            self.text_encoder_2 = T5EncoderModel.from_pretrained(
+                FLUX_PATH,
+                subfolder="text_encoder_2",
+                torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
+            progress_bar.update()
             
         pipeline_args = {
             "pretrained_model_name_or_path": FLUX_FILL_PATH if fill else FLUX_PATH,
@@ -62,15 +71,10 @@ class MyFluxPipe:
             "torch_dtype": self.dtype,
             "local_files_only": USE_LOCAL_FILES
         }
-        # pipeline_args["device_map"] = "balanced"
-        if USE_BNB:
-            self.load_bnb_transformer_text_encoder_2()
-        else:
-            self.load_transformer_text_encoder_2()  # inits the transformer and text_encoder_2
+
+        self.load_transformer()
         print("loading pipeline")
-        sys.stdout.flush()
         if fill:
-            print("loading pipeline")
             self.pipe = FluxFillPipeline.from_pretrained(**pipeline_args)
         else:
             self.pipe = FluxPipeline.from_pretrained(**pipeline_args)
@@ -78,11 +82,10 @@ class MyFluxPipe:
         self.pipe.transformer = self.flux_transformer
         print("adding t5 encoder")
         self.pipe.text_encoder_2 = self.text_encoder_2
-        sys.stdout.flush()
+
         # fuse lora before quantizing
         if FUSE_HYPER_LORA:
             self.fuse_hyper_lora()
-
         # quantize
         if not USE_BNB and USE_OPTIMUM_QUANTO:
             self.quanto_quantize()
@@ -107,7 +110,7 @@ class MyFluxPipe:
         else:
             VRAM = 0
             print("CUDA is not available.")
-        sys.stdout.flush()
+
         if USE_OPTIMUM_QUANTO:
             if USE_CPU_OFFLOAD:
                 self.pipe.enable_model_cpu_offload()
@@ -160,68 +163,21 @@ class MyFluxPipe:
             p.update()
         self.fused_turbo = True
 
-    def load_bnb_transformer_text_encoder_2(self):
-
-        print(f"loading from {self.flux_model_name}")
-
-        with tqdm(range(1), "Loading and quantizing t5 encoder") as progress_bar:
-            quant_config = BitsAndBytesConfig(load_in_8bit=True)
-            self.text_encoder_2 = T5EncoderModel.from_pretrained(
-                FLUX_PATH,
-                subfolder="text_encoder_2",
-                quantization_config=quant_config,
-                torch_dtype=self.dtype,
-                local_files_only=USE_LOCAL_FILES
-            )
-            progress_bar.update()
-
-        with tqdm(range(1), "Loading and quantizing transformer") as progress_bar:
+    def load_transformer(self):
+        transformer_args = {
+            "torch_dtype": self.dtype, "local_files_only": USE_LOCAL_FILES
+        }
+        if USE_BNB:
             quant_config = DiffusersBitsAndBytesConfig(load_in_4bit=True)
-            self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-                self.flux_model_name,
-                # subfolder="transformer",
-                quantization_config=quant_config,
-                torch_dtype=self.dtype,
-                local_files_only=USE_LOCAL_FILES
-            )
-            progress_bar.update()
-
-    def load_transformer_text_encoder_2(self):
+            transformer_args["quantization_config"] = quant_config
         # load and quantize transformer
-
-        with tqdm(range(1), "Loading transformer") as progress_bar:
-            print(f"loading from {self.flux_model_name}")
+        with tqdm(range(1), "Loading and quantizing transformer") as progress_bar:
             try:
                 self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-                    self.flux_model_name,
-                    torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
+                    self.flux_model_name, **transformer_args)
             except OSError:
                 self.flux_transformer = FluxTransformer2DModel.from_pretrained(
-                    self.flux_model_name,
-                    subfolder="transformer",
-                    torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
-
-            # self.flux_transformer = FluxTransformer2DModel.from_single_file(
-            #     "C:\\Users\\teckt\\.cache\\huggingface\\hub\\models--Kijai--flux-fp8\\snapshots\\e77f550e3fe8be226884d5944a40abdbe4735ff5\\flux1-dev-fp8.safetensors",
-            #     subfolder="transformer",
-            #     torch_dtype=self.dtype, local_files_only=True)
-
-
-        # load and quantize t5
-        with tqdm(total=1, desc="loading text_encoder_2") as progress_bar:
-            self.text_encoder_2 = T5EncoderModel.from_pretrained(
-                FLUX_PATH,
-                subfolder="text_encoder_2",
-                torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
-            progress_bar.update()
-            # progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
-            # # if not fill:
-            # quantize(self.text_encoder_2, weights=qfloat8)
-            # progress_bar.update()
-            # progress_bar.set_description("freezing text_encoder_2")
-            # # if not fill:
-            # freeze(self.text_encoder_2)
-            # progress_bar.update()
+                    self.flux_model_name, subfolder="transformer", **transformer_args)
 
     def quanto_quantize(self):
         # load and quantize transformer
@@ -305,18 +261,19 @@ class MyFluxPipe:
             # load the lora into pipeline
             lora_file = os.path.join(self.lora_path, f"{adapter_name}.safetensors")
             if os.path.exists(lora_file):
-                print("Loading lora into pipe from", lora_file)
                 self.pipe.load_lora_weights(self.lora_path,
                                           weight_name=f"{adapter_name}.safetensors",
                                           adapter_name=adapter_name_filtered_for_periods)
+                print("Loaded lora into pipe from", lora_file)
             else:
                 # try to download from huggingface
-                print("Loading lora into pipe from", lora_file)
-                self.pipe.load_lora_weights(adapter_name,
-                                            adapter_name=adapter_name_filtered_for_periods)
-
-
-                print("WARNING:", lora_file, "does not exist.", "Ignoring.")
+                try:
+                    self.pipe.load_lora_weights(
+                        adapter_name,
+                        adapter_name=adapter_name_filtered_for_periods)
+                    print("Loaded lora into pipe from", lora_file)
+                except huggingface_hub.errors.RepositoryNotFoundError:
+                    print("WARNING:", lora_file, "does not exist.", "Ignoring.")
                 continue
 
             self.loaded_loras[adapter_name_filtered_for_periods] = float(adapter_scale)

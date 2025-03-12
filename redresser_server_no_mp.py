@@ -4,6 +4,7 @@ import sys
 import time
 
 from cog import CogSettings, VideoGenerator
+from wan import WanSettings, WanVideoGenerator
 from redresser_utils import SocketServer, SocketClient
 from redresser_flux import Redresser, ImageGenerator
 from redresser_sd15 import RedresserSD15, ImageGeneratorSD15
@@ -151,6 +152,8 @@ def get_pipeline(r, is_server):
         r = ImageGeneratorSD15(is_server=is_server)
     elif r == "cog-i2v":
         r = VideoGenerator(is_server=is_server)
+    elif r == "wan-480":
+        r = WanVideoGenerator(is_server=is_server)
     return r
 
 
@@ -158,13 +161,14 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
     # determine which pipeline to load
     if pipeline.is_server:
         pipeline.settings.map_dfs_options(options)
-        # all models should be fused with either hyper or turbo so keep this at 8
-        if pipeline.settings.options["num_inference_steps"] != 8:
-            print("setting num_inference_steps to 8 for turbo")
-            pipeline.settings.options["num_inference_steps"] = 8
-        if 1.5 > pipeline.settings.options["guidance_scale"] or 5.5 < pipeline.settings.options["guidance_scale"]:
-            print("setting guidance_scale to 3.5 for turbo")
-            pipeline.settings.options["guidance_scale"] = 3.5
+        if not isinstance(pipeline.settings, CogSettings) and not isinstance(pipeline.settings, WanSettings):
+            # all models should be fused with either hyper or turbo so keep this at 8
+            if pipeline.settings.options["num_inference_steps"] != 8:
+                print("setting num_inference_steps to 8 for turbo")
+                pipeline.settings.options["num_inference_steps"] = 8
+            if 1.5 > pipeline.settings.options["guidance_scale"] or 5.5 < pipeline.settings.options["guidance_scale"]:
+                print("setting guidance_scale to 3.5 for turbo")
+                pipeline.settings.options["guidance_scale"] = 3.5
         print("mapped settings", pipeline.settings.options)
         sys.stdout.flush()
     else:
@@ -233,9 +237,6 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
 
 
 def run(r="flux", is_server=True):
-    pipe_ids = ("flux", "flux-fill", "sd15", "sd15-fill", "cog-i2v")
-    if r not in pipe_ids:
-        raise ValueError("r must be in one of pipe_ids:", pipe_ids)
     
     pipe_map = {"flux": 0, "flux-fill": 1, "sd15": 2, "sd15-fill": 3}
     if 'fill' in r:
@@ -340,6 +341,8 @@ def run(r="flux", is_server=True):
     else:
         if r == "cog-i2v":
             settings = CogSettings()
+        elif r == "wan-480":
+            settings = WanSettings()
         else:
             settings = RedresserSettings()
         while True:
@@ -364,10 +367,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     r = args.r
     is_server = args.is_server
-    pipe_ids = ("flux", "flux-fill", "sd15", "sd15-fill", "cog-i2v")
+    pipe_ids = ("flux", "flux-fill", "sd15", "sd15-fill", "cog-i2v", "wan-480")
     if r not in pipe_ids:
         raise ValueError("r must be in one of pipe_ids:", pipe_ids)
     print(f"running with {r},is_server={is_server}")
-    sys.stdout.flush()
+
     # run("cog-i2v", is_server=False)
     run(r, is_server=is_server)
