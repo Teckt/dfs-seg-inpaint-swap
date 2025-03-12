@@ -15,8 +15,8 @@ from transformers import CLIPVisionModel, T5EncoderModel, T5Tokenizer, UMT5Encod
     T5TokenizerFast
 from diffusers import BitsAndBytesConfig
 
-from dfs_seg_inpaint_swap.cog import run_ffmpeg_optical_flow, VideoGenerator
-from dfs_seg_inpaint_swap.redresser_utils import RedresserSettings
+from cog import run_ffmpeg_optical_flow, VideoGenerator
+from redresser_utils import RedresserSettings
 
 
 class WanSettings(RedresserSettings):
