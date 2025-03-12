@@ -58,8 +58,9 @@ class MyFluxPipe:
 
         with tqdm(total=1, desc="loading text_encoder_2") as progress_bar:
             self.text_encoder_2 = T5EncoderModel.from_pretrained(
-                FLUX_PATH,
-                subfolder="text_encoder_2",
+                # FLUX_PATH,
+                "Anyfusion/t5-xxl-encoder-fp8",
+                # subfolder="text_encoder_2",
                 torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
             progress_bar.update()
             
