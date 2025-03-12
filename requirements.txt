@@ -5,4 +5,9 @@ git+https://github.com/huggingface/optimum-quanto.git
 git+https://github.com/huggingface/peft.git
 controlnet_aux
 firebase_admin
+bitsandbytes
 ultralytics
+easydict
+ftfy
+flash_attn
+xformers==0.0.29.post3
