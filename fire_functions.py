@@ -34,7 +34,7 @@ class UserMeta:
 
 
 class FirestoreFunctions:
-    cred = credentials.Certificate(CRED_PATH)
+    cred = credentials.Certificate(os.path.join("..", CRED_PATH))
     try:
         app = firebase_admin.initialize_app(cred, {'storageBucket': STORAGE_BUCKET_ID})
     except ValueError:
