@@ -174,7 +174,7 @@ class MyFluxPipe:
             "torch_dtype": self.dtype, "local_files_only": USE_LOCAL_FILES
         }
         if USE_BNB:
-            quant_config = DiffusersBitsAndBytesConfig(load_in_4bit=True)
+            quant_config = DiffusersBitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16)
             transformer_args["quantization_config"] = quant_config
 
         # check if model name is Anyfusion and exists locally without the repo id

@@ -172,7 +172,7 @@ class RedresserSettings:
         "prompt": "",
         "image": "images",
         # "mask": "seg/00000.png",
-        "guidance_scale": 3.5,
+        "guidance_scale": 30,
         "num_inference_steps": 8,
         # "negative_prompt": None,
         # "strength": None,
@@ -181,7 +181,7 @@ class RedresserSettings:
         "max_side": 1024,
         "center_crop": False,
         "padding": 0,
-        "SEGMENT_ID": SEGMENT_ALL,
+        "SEGMENT_ID": SEGMENT_PERSON,
         "keep_hands": True,
         "keep_face": True,
         # "face_mask_scale": 1.0,
@@ -426,12 +426,12 @@ def yolo8_extract_faces(face_extractor, face_seg_model, inputs, max_faces, conf_
                     aligned_cropped_image = face_data["aligned_cropped_image"]
                     seg_mask = face_data["seg_mask"]
                     seg_mask = cv2.resize(seg_mask, (aligned_cropped_image.shape[1], aligned_cropped_image.shape[0]), cv2.INTER_CUBIC)
-                    seg_mask = np.expand_dims(seg_mask, -1)
-                    seg_mask = np.concatenate((seg_mask, seg_mask, seg_mask), -1)
+                    # seg_mask = np.expand_dims(seg_mask, -1)
+                    # seg_mask = np.concatenate((seg_mask, seg_mask, seg_mask), -1)
                     orig_img_bw = paste_swapped_image(
                         dst_image=orig_img_bw,
                         swapped_image=seg_mask,
-                        seg_mask=face_data["seg_mask"],
+                        seg_mask=seg_mask,
                         aligned_cropped_params=face_data["aligned_cropped_params"],
                         seamless_clone=False,
                         blur_mask=True,
@@ -545,10 +545,19 @@ class SocketClient:
         self.port = port
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    def put(self, data, use_pickle=True):
-
+    def put(self, data, max_retries=99, retry_wait=1, use_pickle=True):
+        cur_retries = 0
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client.connect(("localhost", self.port))
+        while True:
+            try:
+                self.client.connect(("localhost", self.port))
+                break
+            except ConnectionRefusedError:
+                cur_retries += 1
+                if cur_retries > max_retries:
+                    return
+                print(f"Put failed! Retrying in {retry_wait} seconds")
+                time.sleep(retry_wait)
         if use_pickle:
             data = pickle.dumps(data)
         print(f"{self.__class__.__name__} {self.port} sending object")
@@ -578,15 +587,15 @@ def push_model_to_hub():
     # model.push_to_hub("cogvideox-nf4")
     quant_config = BitsAndBytesConfig(load_in_4bit=True)
     model = FluxTransformer2DModel.from_pretrained(
-        "flux-fp8",
+        FLUX_FILL_PATH,
         subfolder="transformer",
         quantization_config=quant_config,
         torch_dtype=torch.bfloat16, local_files_only=True)
     # model.to("cuda")
-    model.save_pretrained("flux-nf4", max_shard_size="25GB")
+    model.save_pretrained("flux-fill-nf4", max_shard_size="16GB")
 
-    # print("pushing to hub")
-    # model.push_to_hub("flux-fp8", max_shard_size="16GB")
+    print("pushing to hub")
+    model.push_to_hub("flux-fill-nf4", max_shard_size="16GB")
 
 
 if __name__=="__main__":

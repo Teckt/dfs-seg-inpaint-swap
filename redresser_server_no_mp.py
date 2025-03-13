@@ -180,8 +180,9 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
                 os.path.dirname(os.path.abspath(__file__)),
                 image_file_path)
             pipeline.settings.options["image"] = absolute_path
+        # forget using masks on local, use on server instead
+        pipeline.settings.options["mask"] = None
         print("passed settings", pipeline.settings.options)
-        sys.stdout.flush()
 
     # pass options to image processor
     if isinstance(pipeline, Redresser):
@@ -361,7 +362,7 @@ def run(r="flux", is_server=True):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("-r", "--r", default='flux')
+    parser.add_argument("-r", "--r", default='flux-fill')
     parser.add_argument("-s", "--is_server", default=False, action='store_true')
 
     args = parser.parse_args()
