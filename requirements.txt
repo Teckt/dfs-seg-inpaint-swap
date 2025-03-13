@@ -11,3 +11,4 @@ easydict
 ftfy
 flash_attn
 xformers==0.0.29.post3
+huggingface_hub

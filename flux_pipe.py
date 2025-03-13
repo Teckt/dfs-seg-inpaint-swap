@@ -57,15 +57,15 @@ class MyFluxPipe:
             progress_bar.update()
 
         # check if model name is Anyfusion and exists locally without the repo id
-        if os.path.exists(os.path.join("t5-xxl-encoder-fp8", "model.safetensors")):
-            text_encoder_id = "t5-xxl-encoder-fp8"
-        else:
-            text_encoder_id = "Anyfusion/t5-xxl-encoder-fp8"
+        # if os.path.exists(os.path.join("t5-xxl-encoder-fp8", "model.safetensors")):
+        #     text_encoder_id = "t5-xxl-encoder-fp8"
+        # else:
+        #     text_encoder_id = "Anyfusion/t5-xxl-encoder-fp8"
         with tqdm(total=1, desc="loading text_encoder_2") as progress_bar:
             self.text_encoder_2 = T5EncoderModel.from_pretrained(
-                # FLUX_PATH,
-                text_encoder_id,
-                # subfolder="text_encoder_2",
+                FLUX_PATH,
+                # text_encoder_id,
+                subfolder="text_encoder_2",
                 torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
             progress_bar.update()
             
