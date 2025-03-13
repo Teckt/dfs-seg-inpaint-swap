@@ -19,7 +19,7 @@ class ImageProcessor:
 
         # builds face detection model from YOLO (PyTorch)
         print("loading face extract model")
-        self.face_extract_model = YOLO(RedresserSettings.face_model_path)
+        self.face_extract_model = YOLO(hf_hub_download("Anyfusion/xseg", RedresserSettings.face_model_path))
 
         self.f_seg_model = None
         self.hand_seg_model = None

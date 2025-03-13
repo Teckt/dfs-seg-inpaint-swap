@@ -56,10 +56,15 @@ class MyFluxPipe:
                 local_files_only=USE_LOCAL_FILES)
             progress_bar.update()
 
+        # check if model name is Anyfusion and exists locally without the repo id
+        if os.path.exists(os.path.join("t5-xxl-encoder-fp8", "model.safetensors")):
+            text_encoder_id = "t5-xxl-encoder-fp8"
+        else:
+            text_encoder_id = "Anyfusion/t5-xxl-encoder-fp8"
         with tqdm(total=1, desc="loading text_encoder_2") as progress_bar:
             self.text_encoder_2 = T5EncoderModel.from_pretrained(
                 # FLUX_PATH,
-                "Anyfusion/t5-xxl-encoder-fp8",
+                text_encoder_id,
                 # subfolder="text_encoder_2",
                 torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
             progress_bar.update()
@@ -171,6 +176,13 @@ class MyFluxPipe:
         if USE_BNB:
             quant_config = DiffusersBitsAndBytesConfig(load_in_4bit=True)
             transformer_args["quantization_config"] = quant_config
+
+        # check if model name is Anyfusion and exists locally without the repo id
+        if "Anyfusion/" in self.flux_model_name:
+            local_dir = self.flux_model_name.replace("Anyfusion/", "")
+            if os.path.exists(os.path.join(local_dir, "diffusion_pytorch_model.safetensors")):
+                self.flux_model_name = local_dir
+
         # load and quantize transformer
         with tqdm(range(1), "Loading and quantizing transformer") as progress_bar:
             try:
