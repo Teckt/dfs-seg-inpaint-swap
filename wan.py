@@ -83,9 +83,14 @@ class WanVideoGenerator(VideoGenerator):
         # with tqdm(desc="Saving image_encoder"):
         #     image_encoder.save_pretrained("clip-vision-nf4", max_shard_size="16GB")
 
+        text_encoder_path = "Anyfusion/umt5-xxl-encoder-fp8"
+        if "Anyfusion/" in text_encoder_path:
+            local_dir = text_encoder_path.replace("Anyfusion/", "")
+            if os.path.exists(os.path.join(local_dir, "diffusion_pytorch_model.safetensors")):
+                text_encoder_path = local_dir
         with tqdm(desc="Loading text_encoder"):
             text_encoder = UMT5EncoderModel.from_pretrained(
-                "Anyfusion/umt5-xxl-encoder-fp8",
+                text_encoder_path,
                 # model_id,
                 # subfolder="text_encoder",
                 # quantization_config=quant_config,

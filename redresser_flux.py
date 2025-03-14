@@ -243,8 +243,10 @@ class ImageGenerator:
             redresser_dir = image_path.replace(basename, "")
             redresser_output_file_path = f"{redresser_dir}/{OUTPUT_FILE_BASE_NAME}"
         else:
+            def dict_to_filename(data: dict, separator="-", kv_separator="_"):
+                return separator.join(f"{k}{kv_separator}{v}" for k, v in data.items())
             # save to same dir as image
-            redresser_output_file_path = f"{IMAGE_OUTPUT_DIR}/{seed}-{self.settings.options['guidance_scale']}-{self.settings.options['num_inference_steps']}-{OUTPUT_FILE_BASE_NAME}"
+            redresser_output_file_path = f"{IMAGE_OUTPUT_DIR}/{seed}-{self.settings.options['guidance_scale']}-{self.settings.options['num_inference_steps']}-{dict_to_filename(self.pipe.loaded_loras)}.png"
             if not os.path.exists(IMAGE_OUTPUT_DIR):
                 os.mkdir(IMAGE_OUTPUT_DIR)
 
@@ -252,7 +254,7 @@ class ImageGenerator:
             print("image_idx", image_idx, "image", image, image.info)
             image.save(redresser_output_file_path)
             # image.save(f"{time_id}_{str(image_idx).zfill(5)}.png")
-        sys.stdout.flush()
+
 
     def process_outputs(self, outputs):
         final_pil_images = []

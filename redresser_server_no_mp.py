@@ -321,7 +321,7 @@ def run(r="flux", is_server=True):
                     pass
 
             print("options", options)
-            sys.stdout.flush()
+
             # print("image_path", image_path)
             # run the pipeline with options inputs and runs the image processor if needed
             # load pipeline here to test imgage processor
@@ -362,7 +362,7 @@ def run(r="flux", is_server=True):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("-r", "--r", default='flux-fill')
+    parser.add_argument("-r", "--r", default='flux')
     parser.add_argument("-s", "--is_server", default=False, action='store_true')
 
     args = parser.parse_args()

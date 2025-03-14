@@ -8,6 +8,8 @@ import torch
 import os
 
 from diffusers import FluxTransformer2DModel, CogVideoXTransformer3DModel, GGUFQuantizationConfig, BitsAndBytesConfig
+from huggingface_hub import hf_hub_download
+from tqdm import tqdm
 from transformers import UMT5EncoderModel, T5EncoderModel
 
 from tf_free_functions import align_crop_image, paste_swapped_image
@@ -164,6 +166,7 @@ class RedresserSettings:
     # why are these here? FOR CONVENIENCE
     xseg_model_path = "xseg/saved_model"  # local path only
     face_model_path = "yolov8n-face.pt"  # local path only
+    face_box_model_path = "face_yolov9c.pt"  # downloads from Bingsu/adetailer
 
     person_model_path = "person_yolov8m-seg.pt"  # downloads from Bingsu/adetailer
     fashion_model_path = "deepfashion2_yolov8s-seg.pt"  # downloads from Bingsu/adetailer
@@ -172,7 +175,7 @@ class RedresserSettings:
         "prompt": "",
         "image": "images",
         # "mask": "seg/00000.png",
-        "guidance_scale": 30,
+        "guidance_scale": 3.5,
         "num_inference_steps": 8,
         # "negative_prompt": None,
         # "strength": None,
@@ -186,7 +189,7 @@ class RedresserSettings:
         "keep_face": True,
         # "face_mask_scale": 1.0,
         # "use_faceswap": False,
-        "runs": 4,  # how many times to run with these settings
+        "runs": 1,  # how many times to run with these settings
     }
 
     def __init__(self, ):
@@ -585,18 +588,47 @@ def push_model_to_hub():
     #         )
     # print("pushing to hub")
     # model.push_to_hub("cogvideox-nf4")
-    quant_config = BitsAndBytesConfig(load_in_4bit=True)
+    print("loading model")
     model = FluxTransformer2DModel.from_pretrained(
         FLUX_FILL_PATH,
         subfolder="transformer",
-        quantization_config=quant_config,
+        # quantization_config=quant_config,
         torch_dtype=torch.bfloat16, local_files_only=True)
+
     # model.to("cuda")
-    model.save_pretrained("flux-fill-nf4", max_shard_size="16GB")
+    # model.save_pretrained("t5-encoder-fp16", max_shard_size="16GB")
+    with tqdm(range(4), desc="Fusing hyper lora") as p:
+        model.load_lora_adapter(
+            hf_hub_download(FUSE_HYPER_LORA_REPO, FUSE_HYPER_LORA_MODEL_FILE),
+            adapter_name="hyper")
+        p.update()
+        p.desc = "Setting adapter"
+        lora_settings = {"adapter_names": ["hyper"],
+                         "weights": [.125]}
+        model.set_adapters(**lora_settings)
+        p.update()
+        p.desc = "Fusing lora"
+        model.fuse_lora()
+        p.update()
+        p.desc = "Unloading lora"
+        model.unload_lora()
+        p.desc = "Deleting adapter"
+        model.delete_adapters(["hyper"])
+        p.update()
 
-    print("pushing to hub")
-    model.push_to_hub("flux-fill-nf4", max_shard_size="16GB")
-
+    # print("pushing to hub")
+    model.save_pretrained("flux-hyper-fp16", max_shard_size="32GB")
+    # model.push_to_hub("flux-hyper-fp16", max_shard_size="32GB")
+    del model
+    quant_config = BitsAndBytesConfig(load_in_8bit=True)
+    print("loading into bnb")
+    model = FluxTransformer2DModel.from_pretrained(
+        "flux-hyper-fp16",
+        quantization_config=quant_config,
+        torch_dtype=torch.bfloat16
+    )
+    print("saving!!")
+    model.save_pretrained("flux-hyper-q8", max_shard_size="32GB")
 
 if __name__=="__main__":
     push_model_to_hub()

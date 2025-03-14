@@ -277,8 +277,10 @@ class ImageProcessor:
             _orig_img = np.array(orig_img, dtype=np.uint8)
             seg_img = np.array(seg_img, dtype=np.uint8)
             seg_img[_orig_img == 255] = 255
+            # test here to use noise on original where mask is
+            # _orig_img[seg_img == 255] = np.random.randint(0, 256)
             seg_img = Image.fromarray(seg_img)
-
+            # orig_img = Image.fromarray(_orig_img)
             orig_img = orig_img.resize((image_resize_params.new_w, image_resize_params.new_h))
         # if seg_path is not None:
         #     seg_img.save(seg_path)
@@ -302,8 +304,8 @@ class ImageProcessor:
 
         seg_img = seg_img.resize((image_resize_params.new_w, image_resize_params.new_h))
         seg_img = np.array(seg_img, dtype=np.uint8)
-        if pad_mask is not None:
-            seg_img[pad_mask == 255] = 255
+        # if pad_mask is not None:
+        #     seg_img[pad_mask == 255] = 255
         if face_masks_combined is not None:
             if self.settings.options[
                 "keep_face"]:  # removes faces from seg; used to keep faces intact or for face restore
@@ -321,7 +323,7 @@ class ImageProcessor:
                 hand_mask = np.array(hand_mask, dtype=np.uint8)
 
                 seg_img[hand_mask > 127] = 0
-
+            seg_img[pad_mask==255] = 255
             seg_img = Image.fromarray(seg_img).convert('RGB')
             if seg_path is not None:
                 seg_img.save(seg_path + "-face.png")

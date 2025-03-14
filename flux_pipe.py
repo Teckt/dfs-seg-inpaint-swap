@@ -57,16 +57,17 @@ class MyFluxPipe:
             progress_bar.update()
 
         # check if model name is Anyfusion and exists locally without the repo id
-        # if os.path.exists(os.path.join("t5-xxl-encoder-fp8", "model.safetensors")):
-        #     text_encoder_id = "t5-xxl-encoder-fp8"
-        # else:
-        #     text_encoder_id = "Anyfusion/t5-xxl-encoder-fp8"
+        text_encoder_args = {
+            "torch_dtype": self.dtype, "local_files_only": USE_LOCAL_FILES
+        }
+        if os.path.exists(os.path.join("t5-encoder-fp16", "model.safetensors")):
+            text_encoder_id = "t5-encoder-fp16"
+        else:
+            text_encoder_id = "Anyfusion/t5-encoder-fp16"
+
         with tqdm(total=1, desc="loading text_encoder_2") as progress_bar:
             self.text_encoder_2 = T5EncoderModel.from_pretrained(
-                FLUX_PATH,
-                # text_encoder_id,
-                subfolder="text_encoder_2",
-                torch_dtype=self.dtype, local_files_only=USE_LOCAL_FILES)
+                text_encoder_id, **text_encoder_args)
             progress_bar.update()
             
         pipeline_args = {
@@ -126,7 +127,7 @@ class MyFluxPipe:
                 self.pipe.to("cuda")
         elif USE_BNB:
             self.pipe.to("cuda")
-            self.pipe.enable_model_cpu_offload()
+            # self.pipe.enable_model_cpu_offload()
         else:
             if USE_CPU_OFFLOAD:
                 self.pipe.enable_model_cpu_offload()
@@ -282,7 +283,8 @@ class MyFluxPipe:
                 # try to download from huggingface
                 try:
                     self.pipe.load_lora_weights(
-                        adapter_name,
+                        "Anyfusion/flux-loras",
+                        weight_name=f"{adapter_name}.safetensors",
                         adapter_name=adapter_name_filtered_for_periods)
                     print("Loaded lora into pipe from", lora_file)
                 except huggingface_hub.errors.RepositoryNotFoundError:
