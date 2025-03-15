@@ -63,7 +63,8 @@ class MyFluxPipe:
         if os.path.exists(os.path.join("t5-encoder-fp16", "model.safetensors")):
             text_encoder_id = "t5-encoder-fp16"
         else:
-            text_encoder_id = "Anyfusion/t5-encoder-fp16"
+            text_encoder_id = FLUX_PATH
+            text_encoder_args["subfolder"] = "text_encoder_2"
 
         with tqdm(total=1, desc="loading text_encoder_2") as progress_bar:
             self.text_encoder_2 = T5EncoderModel.from_pretrained(
