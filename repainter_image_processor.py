@@ -28,7 +28,7 @@ class ImageProcessor:
         self.settings = None
 
     def set_seg_models(self, settings):
-        self.settings = settings.copy()
+        self.settings = settings
         '''
         loads the models for face seg, face detect, fashion/person seg, hand seg
         '''

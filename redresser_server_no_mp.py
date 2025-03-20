@@ -167,10 +167,14 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
             if pipeline.settings.options["num_inference_steps"] != 8:
                 print("setting num_inference_steps to 8 for turbo")
                 pipeline.settings.options["num_inference_steps"] = 8
-            if 1.0 > pipeline.settings.options["guidance_scale"] or 10 < pipeline.settings.options["guidance_scale"]:
+
+            if pipeline.model == "fill":
+                print("setting guidance_scale to 30 for repainter")
+                pipeline.settings.options["guidance_scale"] = 30
+            elif 1.0 > pipeline.settings.options["guidance_scale"] or 10 < pipeline.settings.options[
+                "guidance_scale"]:
                 print("setting guidance_scale to 3.5 for turbo")
                 pipeline.settings.options["guidance_scale"] = 3.5
-
         print("mapped settings", pipeline.settings.options)
 
     else:
@@ -227,7 +231,7 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
             pipeline.run(*parsed_im_outputs)
     else:
         print("running pipeline")
-        pipeline.run()
+        pipeline.run_t2i()
 
     return True
 
@@ -290,6 +294,7 @@ def run(r="flux", is_server=True):
 
             job_order = job_order + 1 if job_order < len(job_orders) - 1 else 0
             job_type = job_orders[job_order]
+            repaint_mode = job_order  # just happens to be the same
 
             # job_type = FirestoreFunctions.TRAINING_JOB if training_job_first else FirestoreFunctions.SWAPPING_JOB
             # job_type = FirestoreFunctions.REPAINT_IMAGE_JOB
@@ -307,7 +312,7 @@ def run(r="flux", is_server=True):
                     time.sleep(1)
                     continue
                 else:
-                    job_to_lock = firestoreFunctions.get_jobs(job_type=job_type, resolutions=[], repaint_mode=0 if pipeline.model == "t2i" else 1)
+                    job_to_lock = firestoreFunctions.get_jobs(job_type=job_type, resolutions=[], repaint_mode=repaint_mode)
                     if job_to_lock is not None:
                         print(f'\nlocking job({job_to_lock.id}) ({job_type})...')
                         firestoreFunctions.lock_job(job_type=job_type, job=job_to_lock)
@@ -350,10 +355,15 @@ def run(r="flux", is_server=True):
             # if pipeline is None:
             #     pipeline = get_pipeline(r, is_server)
 
-            if pipeline.model == "t2i" and int(job_dict["mode"]) != 0:
-                raise ValueError(f"pipeline model ({pipeline.model}) and job mode {job_dict['mode']} does not match!")
-            if pipeline.model == "fill" and int(job_dict["mode"]) != 1:
-                raise ValueError(f"pipeline model ({pipeline.model}) and job mode {job_dict['mode']} does not match!")
+            if int(job_dict["mode"]) == 0 and pipeline.model != "t2i":
+                print(f"pipeline model ({pipeline.model}) and job mode {job_dict['mode']} does not match!")
+                print("switching to t2i")
+                pipeline.switch_pipeline("t2i")
+
+            if int(job_dict["mode"]) == 1 and pipeline.model != "fill":
+                print(f"pipeline model ({pipeline.model}) and job mode {job_dict['mode']} does not match!")
+                print("switching to fill")
+                pipeline.switch_pipeline("fill")
 
             result = run_redresser_flux_process(
                 pipeline=pipeline, options=options,
@@ -393,8 +403,8 @@ def run(r="flux", is_server=True):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("-r", "--r", default='wan-480')
-    parser.add_argument("-s", "--is_server", default=False, action='store_true')
+    parser.add_argument("-r", "--r", default='flux-fill')
+    parser.add_argument("-s", "--is_server", default=True, action='store_true')
 
     args = parser.parse_args()
     r = args.r

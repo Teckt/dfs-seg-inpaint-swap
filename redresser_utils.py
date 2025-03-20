@@ -173,6 +173,7 @@ class RedresserSettings:
     fashion_model_path = "deepfashion2_yolov8s-seg.pt"  # downloads from Bingsu/adetailer
     hand_model_path = "hand_yolov9c.pt"  # downloads from Bingsu/adetailer
     default_options = {
+        # "prompt": "best quality 4k, <jjk-d-step00000300>close-up shot of a jjk face, shoulder-length hair",
         "prompt": "",
         "image": "dance",
         # "mask": "seg/00000.png",

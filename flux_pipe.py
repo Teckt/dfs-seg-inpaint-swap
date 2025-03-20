@@ -173,12 +173,16 @@ class MyFluxPipe:
         # just set pipe if already loaded empty
         if fill:
             if self.pipes["fill"] is not None:
+                self.pipe.transformer.to("cpu")
                 self.pipe = self.pipes["fill"]
+                self.pipe.transformer.to("cuda")
                 print(f"switched pipe to fill")
                 return
         else:
             if self.pipes["t2i"] is not None:
+                self.pipe.transformer.to("cpu")
                 self.pipe = self.pipes["t2i"]
+                self.pipe.transformer.to("cuda")
                 print(f"switched pipe to t2i")
                 return
 
