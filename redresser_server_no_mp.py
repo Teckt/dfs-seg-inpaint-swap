@@ -74,6 +74,7 @@ class RepaintJobProcesser:
         self.input_file_path = self.userRepaintDir + "/" + self.imageFileName
         self.mode = job_doc.get("mode")  # 0 for t2i, 1 for repaint
         if self.mode == 0:
+            # nothing to download, just return
             return self.input_file_path, None
 
         if not FirestoreFunctions.chunked_download(
@@ -143,11 +144,11 @@ class RepaintJobProcesser:
 def get_pipeline(r, is_server):
     _r = r
     if r == "flux-fill":
-        r = Redresser(is_server=is_server)
+        r = Redresser(is_server=is_server, model="fill")
     elif r == "sd15-fill":
         r = RedresserSD15(is_server=is_server)
     elif r == "flux":
-        r = ImageGenerator(is_server=is_server)
+        r = Redresser(is_server=is_server, model="t2i")
     elif r == "sd15":
         r = ImageGeneratorSD15(is_server=is_server)
     elif r == "cog-i2v":
@@ -157,7 +158,7 @@ def get_pipeline(r, is_server):
     return r
 
 
-def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_client:SocketClient):
+def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_client:SocketClient, job_processor):
     # determine which pipeline to load
     if pipeline.is_server:
         pipeline.settings.map_dfs_options(options)
@@ -166,11 +167,12 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
             if pipeline.settings.options["num_inference_steps"] != 8:
                 print("setting num_inference_steps to 8 for turbo")
                 pipeline.settings.options["num_inference_steps"] = 8
-            if 1.5 > pipeline.settings.options["guidance_scale"] or 5.5 < pipeline.settings.options["guidance_scale"]:
+            if 1.0 > pipeline.settings.options["guidance_scale"] or 10 < pipeline.settings.options["guidance_scale"]:
                 print("setting guidance_scale to 3.5 for turbo")
                 pipeline.settings.options["guidance_scale"] = 3.5
+
         print("mapped settings", pipeline.settings.options)
-        sys.stdout.flush()
+
     else:
         pipeline.settings.options = options.copy()
         # need absolute path for the input image
@@ -184,10 +186,10 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
         pipeline.settings.options["mask"] = None
         print("passed settings", pipeline.settings.options)
 
-    # pass options to image processor
-    if isinstance(pipeline, Redresser):
+    # last chance to switch pipelines here
+
+    if pipeline.model == "fill":
         print("passing settings to image processor")
-        sys.stdout.flush()
         while True:
             try:
                 img_client.put(pipeline.settings)
@@ -201,52 +203,69 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
             for file_index, file in enumerate(os.listdir(image_dir)):
                 if file.endswith(".jpg") or file.endswith(".png") or file.endswith(".webp") or file.endswith(".jfif"):
                     print(f"[{file_index}] waiting for image processor outputs for file {file}")
-                    sys.stdout.flush()
                     im_outputs = pipe_server.get()
 
                     if im_outputs is None:
                         return False
 
                     print(f"[{file_index}] parsing image processor outputs for pipe")
-                    sys.stdout.flush()
                     parsed_im_outputs = pipeline.parse_image_processor_outputs(*im_outputs)
 
                     print(f"[{file_index}] running pipeline")
-                    sys.stdout.flush()
                     pipeline.run(*parsed_im_outputs)
         else:
             print("waiting for image processor outputs")
-            sys.stdout.flush()
             im_outputs = pipe_server.get()
 
             if im_outputs is None:
                 return False
 
             print("parsing image processor outputs for pipe")
-            sys.stdout.flush()
             parsed_im_outputs = pipeline.parse_image_processor_outputs(*im_outputs)
 
             print("running pipeline")
-            sys.stdout.flush()
             pipeline.run(*parsed_im_outputs)
     else:
         print("running pipeline")
-        sys.stdout.flush()
         pipeline.run()
 
     return True
 
 
+def maybe_switch_pipelines(pipeline_switch_server, pipeline):
+    print("maybe_switch_pipelines")
+    try:
+        to_switch = pipeline_switch_server.get(blocking=False)
+        if to_switch == "fill":
+            if pipeline.model != "fill":
+                print("switching to fill")
+                pipeline.switch_pipeline("fill")
+        else:
+            if pipeline.model == "fill":
+                print("switching to t2i")
+                pipeline.switch_pipeline("t2i")
+
+    except BlockingIOError:
+        pass
+
+
 def run(r="flux", is_server=True):
     
-    pipe_map = {"flux": 0, "flux-fill": 1, "sd15": 2, "sd15-fill": 3}
-    if 'fill' in r:
+    pipe_map = {"flux": 0, "flux-fill": 0, "sd15": 1, "sd15-fill": 1}
+    # if 'fill' in r:
+    if r in pipe_map.keys():
         img_client = SocketClient(5000 + pipe_map[r])
         pipe_server = SocketServer(5100 + pipe_map[r])
     else:
         img_client = None
         pipe_server = None
-    pipeline = None
+    # else:
+    #     img_client = None
+    #     pipe_server = None
+    # pipeline = None
+
+    pipeline_switch_server = SocketServer(7777)
+    pipeline = get_pipeline(r, is_server)
 
     if is_server:
         machine_id = f'OVERLORD4-0'  # use -3 or -0 because -2 is weird
@@ -263,6 +282,9 @@ def run(r="flux", is_server=True):
         }
 
         while True:
+            # check for switching pipelines here
+            maybe_switch_pipelines(pipeline=pipeline, pipeline_switch_server=pipeline_switch_server)
+
             total_secs = time.time()
             secs = time.time()
 
@@ -285,7 +307,7 @@ def run(r="flux", is_server=True):
                     time.sleep(1)
                     continue
                 else:
-                    job_to_lock = firestoreFunctions.get_jobs(job_type=job_type, resolutions=[])
+                    job_to_lock = firestoreFunctions.get_jobs(job_type=job_type, resolutions=[], repaint_mode=0 if pipeline.model == "t2i" else 1)
                     if job_to_lock is not None:
                         print(f'\nlocking job({job_to_lock.id}) ({job_type})...')
                         firestoreFunctions.lock_job(job_type=job_type, job=job_to_lock)
@@ -304,7 +326,7 @@ def run(r="flux", is_server=True):
                         sys.stdout.flush()
                         time.sleep(5)
                         continue
-
+            FirestoreFunctions.job_id = started_job.id
             # download the file to the appropriate folder
             image_path, mask_path = job_processor.download_image(started_job)
             # set the downloaded image path
@@ -325,12 +347,17 @@ def run(r="flux", is_server=True):
             # print("image_path", image_path)
             # run the pipeline with options inputs and runs the image processor if needed
             # load pipeline here to test imgage processor
-            if pipeline is None:
-                pipeline = get_pipeline(r, is_server)
+            # if pipeline is None:
+            #     pipeline = get_pipeline(r, is_server)
+
+            if pipeline.model == "t2i" and int(job_dict["mode"]) != 0:
+                raise ValueError(f"pipeline model ({pipeline.model}) and job mode {job_dict['mode']} does not match!")
+            if pipeline.model == "fill" and int(job_dict["mode"]) != 1:
+                raise ValueError(f"pipeline model ({pipeline.model}) and job mode {job_dict['mode']} does not match!")
 
             result = run_redresser_flux_process(
                 pipeline=pipeline, options=options,
-                img_client=img_client, pipe_server=pipe_server)
+                img_client=img_client, pipe_server=pipe_server, job_processor=job_processor)
 
             if not result:
                 print("job failed?")
@@ -340,6 +367,7 @@ def run(r="flux", is_server=True):
             sys.stdout.flush()
             time.sleep(5)
     else:
+
         if r == "cog-i2v":
             settings = CogSettings()
         elif r == "wan-480":
@@ -348,21 +376,24 @@ def run(r="flux", is_server=True):
             settings = RedresserSettings()
         while True:
             settings.set_options()
+            # check for switching pipelines here after user input for local
+            maybe_switch_pipelines(pipeline=pipeline, pipeline_switch_server=pipeline_switch_server)
+
             runs = int(settings.options.get("runs", 1))
             for _ in range(runs):
                 # load pipeline here to test imgage processor
-                if pipeline is None:
-                    pipeline = get_pipeline(r, is_server)
+                # if pipeline is None:
+                #     pipeline = get_pipeline(r, is_server)
 
                 result = run_redresser_flux_process(
                     pipeline=pipeline, options=settings.options,
-                    img_client=img_client, pipe_server=pipe_server)
+                    img_client=img_client, pipe_server=pipe_server, job_processor=None)
 
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("-r", "--r", default='flux')
+    parser.add_argument("-r", "--r", default='wan-480')
     parser.add_argument("-s", "--is_server", default=False, action='store_true')
 
     args = parser.parse_args()

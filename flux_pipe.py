@@ -16,6 +16,10 @@ from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
 from transformers import BitsAndBytesConfig as BitsAndBytesConfig
 from CONSTANTS import *
 from optimum.quanto import freeze, qfloat8, quantize
+
+from fire_functions import FirestoreFunctions
+
+
 # from optimum_quanto.optimum.quanto import QuantizedTransformersModel
 
 
@@ -26,7 +30,8 @@ from optimum.quanto import freeze, qfloat8, quantize
 
 class MyFluxPipe:
 
-    def __init__(self, fill=True):
+    def __init__(self, fill=True, ):
+        self.fire_functions = FirestoreFunctions()
 
         self.dtype = torch.bfloat16
         self.lora_path = LORA_PATH
@@ -35,7 +40,6 @@ class MyFluxPipe:
         else:
             self.flux_model_name = FLUX_FILL_PATH if fill else FLUX_PATH
 
-        self.flux_transformer = None
         # load VAE
         # with tqdm(range(1), "Loading flux_vae"):
         #     self.flux_vae = AutoencoderKL.from_pretrained(
@@ -47,6 +51,8 @@ class MyFluxPipe:
 
         self.fused_turbo = False
         self.is_fill = fill
+
+        self.pipes = {"t2i":None, "fill":None}
 
         # load tokenizer
         with tqdm(range(1), "Loading CLIPTextModel") as progress_bar:
@@ -80,14 +86,18 @@ class MyFluxPipe:
             "local_files_only": USE_LOCAL_FILES
         }
 
-        self.load_transformer()
+        transformer =  self.load_transformer()
+
         print("loading pipeline")
         if fill:
-            self.pipe = FluxFillPipeline.from_pretrained(**pipeline_args)
+            self.pipes["fill"] = FluxFillPipeline.from_pretrained(**pipeline_args)
+            self.pipe = self.pipes["fill"]
         else:
-            self.pipe = FluxPipeline.from_pretrained(**pipeline_args)
+            self.pipes["t2i"] = FluxPipeline.from_pretrained(**pipeline_args)
+            self.pipe = self.pipes["t2i"]
+
         print("adding transformer")
-        self.pipe.transformer = self.flux_transformer
+        self.pipe.transformer = transformer
         print("adding t5 encoder")
         self.pipe.text_encoder_2 = self.text_encoder_2
 
@@ -103,7 +113,7 @@ class MyFluxPipe:
             # save the model here
             with tqdm(range(1), "Saving transformer"):
                 print(f"saving transformer to {SAVE_MODEL_PATH}")
-                self.flux_transformer.save_pretrained(SAVE_MODEL_PATH, max_shard_size=SHARD_SIZE)
+                transformer.save_pretrained(SAVE_MODEL_PATH, max_shard_size=SHARD_SIZE)
 
         self.pipe.vae.enable_slicing()
         # self.pipe.vae.enable_tiling()
@@ -136,6 +146,103 @@ class MyFluxPipe:
                 self.pipe.enable_sequential_cpu_offload()
             else:
                 self.pipe.to("cuda")
+
+    def switch_pipeline(self, pipe):
+        if pipe == "fill":
+            if self.is_fill:
+                print("Already is fill")
+                return
+            else:
+                # switch transformers and pipe
+                self.switch_pipe(fill=True)
+        else:
+            if not self.is_fill:
+                print("Already is not fill")
+                return
+            else:
+                # switch transformers and pipe
+                self.switch_pipe(fill=False)
+
+    def switch_pipe(self, fill):
+        self.is_fill = fill
+        if USE_CUSTOM_FLUX:
+            self.flux_model_name = FLUX_FILL_CUSTOM_PATH if fill else FLUX_CUSTOM_PATH
+        else:
+            self.flux_model_name = FLUX_FILL_PATH if fill else FLUX_PATH
+
+        # just set pipe if already loaded empty
+        if fill:
+            if self.pipes["fill"] is not None:
+                self.pipe = self.pipes["fill"]
+                print(f"switched pipe to fill")
+                return
+        else:
+            if self.pipes["t2i"] is not None:
+                self.pipe = self.pipes["t2i"]
+                print(f"switched pipe to t2i")
+                return
+
+        # load models from current pipe except transformer
+        pipeline_args = {
+            "pretrained_model_name_or_path": FLUX_FILL_PATH if fill else FLUX_PATH,
+            "transformer": None,
+            "text_encoder": self.pipe.text_encoder,
+            "text_encoder_2": self.pipe.text_encoder_2,
+            "vae": self.pipe.vae,
+            "torch_dtype": self.dtype,
+            "local_files_only": USE_LOCAL_FILES
+        }
+
+        # unload to cpu here
+        if USE_OPTIMUM_QUANTO:
+            if USE_CPU_OFFLOAD:
+                self.pipe.disable_model_cpu_offload()
+            elif USE_SEQUENTIAL_CPU_OFFLOAD:
+                self.pipe.disable_sequential_cpu_offload()
+            else:
+                self.pipe.transformer.to("cpu")
+        elif USE_BNB:
+            self.pipe.transformer.to("cpu")
+            # self.pipe.enable_model_cpu_offload()
+        else:
+            if USE_CPU_OFFLOAD:
+                self.pipe.disable_model_cpu_offload()
+            elif USE_SEQUENTIAL_CPU_OFFLOAD:
+                self.pipe.disable_sequential_cpu_offload()
+            else:
+                self.pipe.transformer.to("cpu")
+
+        transformer = self.load_transformer()
+        print("switching pipeline")
+
+        if fill:
+            self.pipes["fill"] = FluxFillPipeline.from_pretrained(**pipeline_args)
+            self.pipe = self.pipes["fill"]
+        else:
+            self.pipes["t2i"] = FluxPipeline.from_pretrained(**pipeline_args)
+            self.pipe = self.pipes["t2i"]
+
+        print("adding transformer")
+        self.pipe.transformer = transformer
+
+        if USE_OPTIMUM_QUANTO:
+            if USE_CPU_OFFLOAD:
+                self.pipe.enable_model_cpu_offload()
+            elif USE_SEQUENTIAL_CPU_OFFLOAD:
+                self.pipe.enable_sequential_cpu_offload()
+            else:
+                self.pipe.to("cuda")
+        elif USE_BNB:
+            self.pipe.to("cuda")
+            # self.pipe.enable_model_cpu_offload()
+        else:
+            if USE_CPU_OFFLOAD:
+                self.pipe.enable_model_cpu_offload()
+            elif USE_SEQUENTIAL_CPU_OFFLOAD:
+                self.pipe.enable_sequential_cpu_offload()
+            else:
+                self.pipe.to("cuda")
+        print(f"switched pipe to {'fill' if fill else 't2i'}")
 
     def fuse_hyper_lora(self):
         # control_pipe = FluxControlPipeline.from_pretrained("black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16)
@@ -187,12 +294,16 @@ class MyFluxPipe:
 
         # load and quantize transformer
         with tqdm(range(1), "Loading and quantizing transformer") as progress_bar:
+            # # fp8 kijai
+            # transformer = FluxTransformer2DModel.from_single_file(
+            #     self.flux_model_name, subfolder="transformer", **transformer_args)
             try:
-                self.flux_transformer = FluxTransformer2DModel.from_pretrained(
+                transformer = FluxTransformer2DModel.from_pretrained(
                     self.flux_model_name, **transformer_args)
             except OSError:
-                self.flux_transformer = FluxTransformer2DModel.from_pretrained(
+                transformer = FluxTransformer2DModel.from_pretrained(
                     self.flux_model_name, subfolder="transformer", **transformer_args)
+        return transformer
 
     def quanto_quantize(self):
         # load and quantize transformer
@@ -203,14 +314,12 @@ class MyFluxPipe:
 
             # if not fill:
 
-            quantize(self.flux_transformer, weights=qfloat8)
+            quantize(self.pipe.transformer, weights=qfloat8)
             progress_bar.update()
             progress_bar.set_description(f"freezing flux_transformer")
             # if not fill:
-            freeze(self.flux_transformer)
+            freeze(self.pipe.transformer)
             progress_bar.update()
-
-            # self.flux_transformer.to(self.dtype)
 
         # # load and quantize t5
         # with tqdm(total=3, desc="loading text_encoder_2") as progress_bar:
@@ -224,30 +333,6 @@ class MyFluxPipe:
         #     # if not fill:
         #     #     freeze(self.text_encoder_2)
         #     progress_bar.update()
-
-    def fuse_turbo(self):
-        if self.fused_turbo:
-            print("turbo already fused")
-            return
-        with tqdm(range(4), desc="Fusing turbo alpha lora") as p:
-            self.flux_transformer.load_lora_adapter(self.lora_path,
-                                        weight_name="turbo-a.safetensors",
-                                        adapter_name="turbo")
-            p.update()
-            p.desc = "Setting adapter"
-            lora_settings = {"adapter_names": ["turbo"],
-                             "weights": [1.0]}
-            self.flux_transformer.set_adapters(**lora_settings)
-            p.update()
-            p.desc = "Fusing lora"
-            self.flux_transformer.fuse_lora()
-            p.update()
-            p.desc = "Unloading lora"
-            self.flux_transformer.unload_lora()
-            p.desc = "Deleting adapter"
-            self.flux_transformer.delete_adapters(["turbo"])
-            p.update()
-        self.fused_turbo = True
 
     def apply_flux_loras_with_prompt(self, prompt, use_turbo=False):
         # use_turbo = False
@@ -290,7 +375,7 @@ class MyFluxPipe:
                     print("Loaded lora into pipe from", lora_file)
                 except huggingface_hub.errors.RepositoryNotFoundError:
                     print("WARNING:", lora_file, "does not exist.", "Ignoring.")
-                continue
+                    continue
 
             self.loaded_loras[adapter_name_filtered_for_periods] = float(adapter_scale)
         if len(self.loaded_loras) > 0:

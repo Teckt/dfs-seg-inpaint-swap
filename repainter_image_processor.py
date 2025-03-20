@@ -28,7 +28,7 @@ class ImageProcessor:
         self.settings = None
 
     def set_seg_models(self, settings):
-        self.settings = settings
+        self.settings = settings.copy()
         '''
         loads the models for face seg, face detect, fashion/person seg, hand seg
         '''
@@ -46,12 +46,12 @@ class ImageProcessor:
             return
 
         # segments images
-        if self.f_seg_model is None:
-            print("loading f_seg model")
-            if segment_id == RedresserSettings.SEGMENT_PERSON:
-                self.f_seg_model = YOLO(hf_hub_download("Bingsu/adetailer", RedresserSettings.person_model_path))
-            elif segment_id == RedresserSettings.SEGMENT_FASHION:
-                self.f_seg_model = YOLO(hf_hub_download("Bingsu/adetailer", RedresserSettings.fashion_model_path))
+        # if self.f_seg_model is None:
+        print("loading f_seg model")
+        if segment_id == RedresserSettings.SEGMENT_PERSON:
+            self.f_seg_model = YOLO(hf_hub_download("Bingsu/adetailer", RedresserSettings.person_model_path))
+        elif segment_id == RedresserSettings.SEGMENT_FASHION:
+            self.f_seg_model = YOLO(hf_hub_download("Bingsu/adetailer", RedresserSettings.fashion_model_path))
             # else:
             #     print("Segment not implemented", segment_id)
             #     assert False

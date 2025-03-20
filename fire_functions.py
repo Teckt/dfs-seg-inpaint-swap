@@ -43,6 +43,8 @@ class FirestoreFunctions:
     db = firestore.client()
     bucket = storage.bucket()
 
+    job_id = None
+
     firebase_iae_model_dir_name = "faceModels"
     firebase_face_set_root_dir_name = "iaeFaceSets"
     firebase_face_set_zipped_file_name = "out.zip"
@@ -95,6 +97,7 @@ class FirestoreFunctions:
         self.modelResolution = None
         self.modelBase = None
         self.modelPretrainedTier = None
+
 
     @staticmethod
     def human_time(timestamp):
@@ -432,7 +435,7 @@ class FirestoreFunctions:
                         print("error, trying again in 5")
                         time.sleep(5)
 
-    def get_jobs(self, job_type, resolutions=(128, 224, 256)):
+    def get_jobs(self, job_type, resolutions=(128, 224, 256), repaint_mode=0):
         ref = self.get_job_ref(job_type)
         if ref is None:
             return None
@@ -441,7 +444,7 @@ class FirestoreFunctions:
             jobs = ref.where(filter=FieldFilter("jobStatus", "==", "queued")).order_by(u'queuedTime', direction=firestore.firestore.Query.ASCENDING).get()
         else:
             if job_type == FirestoreFunctions.REPAINT_IMAGE_JOB:
-                jobs = ref.where(filter=FieldFilter("jobStatus", "==", "queued"))\
+                jobs = ref.where(filter=FieldFilter("mode", "==", repaint_mode)).where(filter=FieldFilter("jobStatus", "==", "queued"))\
                     .order_by(u'queuedTime', direction=firestore.firestore.Query.ASCENDING).get()
             else:
                 jobs = ref.where(filter=FieldFilter("jobStatus", "==", "queued")).where(filter=FieldFilter("resolution", "in", resolutions)).order_by(u'queuedTime', direction=firestore.firestore.Query.ASCENDING).get()

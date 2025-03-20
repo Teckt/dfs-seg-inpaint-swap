@@ -84,19 +84,20 @@ class VideoGenerator:
         '''
         self.is_server = is_server
         self.model = model
-        # initialize default settings first
-        self.settings = CogSettings()
 
         self.dtype = torch.bfloat16
-        self.flux_model_id = "black-forest-labs/FLUX.1-dev"  # Flux dev
-        self.cog_model_id = "THUDM/CogVideoX-5b-I2V"  # Cog 5b I2V
 
-        # self.load_quanto_pipe()
-        self.load_bnb_pipe()
+        if model == "cog-i2v":
+            # initialize default settings first
+            self.settings = CogSettings()
+            self.flux_model_id = "black-forest-labs/FLUX.1-dev"  # Flux dev
+            self.cog_model_id = "THUDM/CogVideoX-5b-I2V"  # Cog 5b I2V
+            # self.load_quanto_pipe()
+            self.load_bnb_pipe()
 
-        self.pipe.enable_model_cpu_offload()
-        self.pipe.vae.enable_slicing()
-        self.pipe.vae.enable_tiling()
+            self.pipe.enable_model_cpu_offload()
+            self.pipe.vae.enable_slicing()
+            self.pipe.vae.enable_tiling()
 
     def load_bnb_pipe(self):
         self.cog_model_id = "D:/huggingface/models--THUDM--CogVideoX-5b-I2V/snapshots/c5c783ca1606069b9996dc56f207cc2e681691ed"

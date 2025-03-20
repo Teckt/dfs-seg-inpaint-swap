@@ -15,6 +15,7 @@ from transformers import UMT5EncoderModel, T5EncoderModel
 from tf_free_functions import align_crop_image, paste_swapped_image
 from CONSTANTS import *
 
+
 def pad_image(image, mask, pad_size, use_noise=False):
     '''
 
@@ -173,15 +174,17 @@ class RedresserSettings:
     hand_model_path = "hand_yolov9c.pt"  # downloads from Bingsu/adetailer
     default_options = {
         "prompt": "",
-        "image": "images",
+        "image": "dance",
         # "mask": "seg/00000.png",
-        "guidance_scale": 3.5,
+        "guidance_scale": 30,
         "num_inference_steps": 8,
         # "negative_prompt": None,
         # "strength": None,
         # "clip_skip": 0,
         "seed": -1,
-        "max_side": 1024,
+        "max_side": 1024,  # used for fill
+        "height": 1024,  # used for t2i only
+        "width": 1024,  # used for t2i only
         "center_crop": False,
         "padding": 0,
         "SEGMENT_ID": SEGMENT_PERSON,
@@ -234,6 +237,7 @@ class RedresserSettings:
         for key, val in self.__class__.default_options.items():
             if use_previous_for_rest:
                 self.options[key] = self.previous_options[key]
+                print(f"{key}: {self.options[key]} (using previous config)")
                 continue
 
             self.options[key] = input(f'{key}({self.previous_options[key]}):')
@@ -245,8 +249,8 @@ class RedresserSettings:
             # ALL PREVIOUS KEY
             elif self.options[key] == 'p':
                 use_previous_for_rest = True
-                print("using previous config for the rest (excluding previous inputs):", self.previous_options)
                 self.options[key] = self.previous_options[key]
+                print(f"{key}: {self.options[key]} (using previous config)")
             # RESET KEY
             elif self.options[key] == 'r':
                 self.options[key] = val
@@ -254,6 +258,9 @@ class RedresserSettings:
         self.check_inputs()
 
         self.previous_options = self.options.copy()
+
+        if use_previous_for_rest:
+            print("using previous config for the rest:", self.previous_options)
 
     def check_inputs(self, ):
         for key, val in self.options.items():
@@ -270,9 +277,9 @@ class RedresserSettings:
             if key in ['use_dynamic_cfg', 'center_crop', "keep_hands", 'keep_face', 'use_faceswap']:
                 try:
                     bool_opt = self.options[key]
-                    if bool_opt.lower() == 'true':
+                    if bool_opt.lower() == 'true' or bool_opt == True:
                         self.options[key] = True
-                    elif bool_opt.lower() == 'false':
+                    elif bool_opt.lower() == 'false' or bool_opt == False:
                         self.options[key] = False
                     else:
                         self.options[key] = bool(self.options[key])
@@ -323,11 +330,6 @@ class ImageResizeParams:
                 image = cv2.resize(image, (self.new_w, self.new_h), interpolation=cv2.INTER_CUBIC)
 
         return image
-
-
-if __name__ == "__main__":
-    pass
-
 
 
 # returns a list of pairs containing the input image and the output mask
@@ -630,5 +632,6 @@ def push_model_to_hub():
     print("saving!!")
     model.save_pretrained("flux-hyper-q8", max_shard_size="32GB")
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     push_model_to_hub()

@@ -23,10 +23,10 @@ class WanSettings(RedresserSettings):
 
     default_options = {
         "prompt": "",
-        "image": "images/1741761675-3.5-20-outputImage.png",
+        "image": "jjk.png",
         "max_area": 65536,
-        "guidance_scale": 5.0,
-        "num_inference_steps": 30,
+        "guidance_scale": 7.5,
+        "num_inference_steps": 20,
         "num_frames": 49,
         "seed": -1,
     }
@@ -46,14 +46,13 @@ class WanVideoGenerator(VideoGenerator):
         super().__init__(is_server, local_files_only, model)
         self.is_server = is_server
         self.model = model
-        # initialize default settings first
-        self.settings = WanSettings()
-
         self.dtype = torch.bfloat16
-
-        # self.load_quanto_pipe()
-        self.pipe = None
-        self.load_pipe()
+        # initialize default settings first
+        if model == "wan-480":
+            self.settings = WanSettings()
+            # self.load_quanto_pipe()
+            self.pipe = None
+            self.load_pipe()
 
     def load_pipe(self):
         model_id = "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
@@ -72,13 +71,13 @@ class WanVideoGenerator(VideoGenerator):
 
         with tqdm(desc="Loading vae"):
             vae = AutoencoderKLWan.from_pretrained(
-                model_id, subfolder="vae", torch_dtype=torch.bfloat16)
+                model_id, subfolder="vae", torch_dtype=torch.float32)
 
         with tqdm(desc="Loading image_encoder"):
             image_encoder = CLIPVisionModel.from_pretrained(
                 model_id, subfolder="image_encoder",
                 # quantization_config=quant_config,
-                torch_dtype=torch.bfloat16
+                torch_dtype=torch.float32
             )
         # with tqdm(desc="Saving image_encoder"):
         #     image_encoder.save_pretrained("clip-vision-nf4", max_shard_size="16GB")
@@ -119,7 +118,6 @@ class WanVideoGenerator(VideoGenerator):
         self.pipe.scheduler = UniPCMultistepScheduler.from_config(self.pipe.scheduler.config, flow_shift=flow_shift)
 
         self.pipe.enable_model_cpu_offload()
-        # pipe.vae.enable_slicing()
 
         # pipe.to("cuda")
     def run(self):
