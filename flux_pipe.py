@@ -173,9 +173,11 @@ class MyFluxPipe:
         # just set pipe if already loaded empty
         if fill:
             if self.pipes["fill"] is not None:
-                self.pipe.transformer.to("cpu")
+                print("moving t2i transformer to cpu")
+                self.pipe["t2i"].transformer.to("cpu")
+                print("moving fill transformer to cuda")
+                self.pipe["fill"].transformer.to("cuda")
                 self.pipe = self.pipes["fill"]
-                self.pipe.transformer.to("cuda")
                 print(f"switched pipe to fill")
                 return
         else:
@@ -235,9 +237,9 @@ class MyFluxPipe:
             elif USE_SEQUENTIAL_CPU_OFFLOAD:
                 self.pipe.enable_sequential_cpu_offload()
             else:
-                self.pipe.to("cuda")
+                self.pipe.transformer.to("cuda")
         elif USE_BNB:
-            self.pipe.to("cuda")
+            self.pipe.transformer.to("cuda")
             # self.pipe.enable_model_cpu_offload()
         else:
             if USE_CPU_OFFLOAD:
@@ -245,7 +247,7 @@ class MyFluxPipe:
             elif USE_SEQUENTIAL_CPU_OFFLOAD:
                 self.pipe.enable_sequential_cpu_offload()
             else:
-                self.pipe.to("cuda")
+                self.pipe.transformer.to("cuda")
         print(f"switched pipe to {'fill' if fill else 't2i'}")
 
     def fuse_hyper_lora(self):
