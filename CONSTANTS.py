@@ -8,7 +8,7 @@ COG_PATH = 'THUDM/CogVideoX-5b-I2V'  # cogxvideo repo
 
 USE_BNB = False
 USE_OPTIMUM_QUANTO = False  # quantize with optimum quanto
-USE_CPU_OFFLOAD = False  # vram savings
+USE_CPU_OFFLOAD = True  # vram savings
 USE_SEQUENTIAL_CPU_OFFLOAD = False  # bigger vram savings
 
 USE_CUSTOM_FLUX = True
