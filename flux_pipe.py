@@ -170,13 +170,28 @@ class MyFluxPipe:
         else:
             self.flux_model_name = FLUX_FILL_PATH if fill else FLUX_PATH
 
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+            print(f"Device name: {torch.cuda.get_device_name(0)}")
+            current_memory = torch.cuda.memory_allocated(device) / (1024 ** 3)  # Convert to GB
+            max_memory = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
+            print(f"GPU memory allocated: {current_memory:.2f}/{max_memory:.2f} GB")
+        else:
+            print("CUDA is not available. Running on CPU.")
+
         # just set pipe if already loaded empty
         if fill:
             if self.pipes["fill"] is not None:
                 print("moving t2i transformer to cpu")
-                self.pipe["t2i"].transformer.to("cpu")
+                self.pipes["t2i"].transformer.to("cpu")
+                current_memory = torch.cuda.memory_allocated(device) / (1024 ** 3)  # Convert to GB
+                max_memory = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
+                print(f"GPU memory allocated: {current_memory:.2f}/{max_memory:.2f} GB")
                 print("moving fill transformer to cuda")
-                self.pipe["fill"].transformer.to("cuda")
+                self.pipes["fill"].transformer.to("cuda")
+                current_memory = torch.cuda.memory_allocated(device) / (1024 ** 3)  # Convert to GB
+                max_memory = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
+                print(f"GPU memory allocated: {current_memory:.2f}/{max_memory:.2f} GB")
                 self.pipe = self.pipes["fill"]
                 print(f"switched pipe to fill")
                 return
