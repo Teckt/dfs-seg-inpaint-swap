@@ -294,12 +294,16 @@ class RedresserSettings:
             if key in ['use_dynamic_cfg', 'center_crop', "keep_hands", 'keep_face', 'use_faceswap']:
                 try:
                     bool_opt = self.options[key]
-                    if bool_opt.lower() == 'true' or bool_opt == True:
-                        self.options[key] = True
-                    elif bool_opt.lower() == 'false' or bool_opt == False:
-                        self.options[key] = False
-                    else:
-                        self.options[key] = bool(self.options[key])
+                    if isinstance(bool_opt, str):
+                        if bool_opt.lower() == 'true':
+                            self.options[key] = True
+                        elif bool_opt.lower() == 'false':
+                            self.options[key] = False
+                        else:
+                            self.options[key] = bool(self.options[key])
+                    elif isinstance(bool_opt, bool):
+                        self.options[key] = bool_opt
+
                 except:
                     self.options[key] = self.__class__.default_options[key]
             if key in ['image', 'mask']:
