@@ -200,21 +200,30 @@ class RedresserSettings:
         self.options = {}
         self.previous_options = self.__class__.default_options.copy()
 
-    def map_dfs_options(self, dfs_options):
+    def map_dfs_options(self, dfs_options, model):
 
         self.options["prompt"] = dfs_options.get("prompt", "")
 
-        self.options["guidance_scale"] = dfs_options.get("cfg", 30.0)
-        self.options["num_inference_steps"] = dfs_options.get("steps", 20)
+        if model == "fill":
+            self.options["guidance_scale"] = dfs_options.get("cfg", 3.0) * 10
+            self.options["num_inference_steps"] = dfs_options.get("steps", 8)
 
-        self.options["keep_hands"] = dfs_options.get("preserveHands", True)
-        self.options["keep_face"] = dfs_options.get("preserveHead", True)
+            self.options["max_side"] = dfs_options.get("size", 1024)
+            self.options["padding"] = dfs_options.get("padding", 0)
+            self.options["center_crop"] = dfs_options.get("center_crop", False)
+            self.options["SEGMENT_ID"] = RedresserSettings.SEGMENT_PERSON  # dfs_options.get("autoMaskOption", RedresserSettings.SEGMENT_PERSON)
+            self.options["keep_hands"] = dfs_options.get("preserveHands", True)
+            self.options["keep_face"] = dfs_options.get("preserveHead", True)
+        else:
+            self.options["guidance_scale"] = dfs_options.get("cfg", 3.5)
+            self.options["num_inference_steps"] = dfs_options.get("steps", 8)
 
-        self.options["max_side"] = dfs_options.get("max_side", 1024)
-        self.options["center_crop"] = dfs_options.get("center_crop", False)
-        self.options["padding"] = dfs_options.get("padding", 0)
-        self.options["SEGMENT_ID"] = RedresserSettings.SEGMENT_PERSON#dfs_options.get("autoMaskOption", RedresserSettings.SEGMENT_PERSON)
+            self.options["height"] = dfs_options.get("height", 1024)
+            self.options["width"] = dfs_options.get("width", 1024)
+
         self.options["runs"] = dfs_options.get("runs", 1)
+
+        # don't check mask and image (if it doesn't exist, it'll use default value, and we don't want that)
 
         try:
             self.options.pop("mask")
@@ -228,6 +237,7 @@ class RedresserSettings:
 
         self.check_inputs()
 
+        # add the image and mask back here
         self.options["mask"] = dfs_options.get("mask", None)
         self.options["image"] = dfs_options.get("image", None)
 
@@ -592,8 +602,8 @@ def push_model_to_hub():
     # print("pushing to hub")
     # model.push_to_hub("cogvideox-nf4")
     print("loading model")
-    model = FluxTransformer2DModel.from_pretrained(
-        FLUX_FILL_PATH,
+    model = FluxTransformer2DModel.from_single_file(
+        "C:\\Users\\teckt\\.cache\\huggingface\\hub\\models--Kijai--flux-fp8\\snapshots\\e77f550e3fe8be226884d5944a40abdbe4735ff5\\flux1-dev-fp8.safetensors",
         subfolder="transformer",
         # quantization_config=quant_config,
         torch_dtype=torch.bfloat16, local_files_only=True)
@@ -620,18 +630,21 @@ def push_model_to_hub():
         p.update()
 
     # print("pushing to hub")
-    model.save_pretrained("flux-hyper-fp16", max_shard_size="32GB")
+    print("converting to f8")
+    model.to(torch.float8_e4m3fn)
+    print("saving")
+    model.save_pretrained("flux-hyper-fp8", max_shard_size="32GB")
     # model.push_to_hub("flux-hyper-fp16", max_shard_size="32GB")
-    del model
-    quant_config = BitsAndBytesConfig(load_in_8bit=True)
-    print("loading into bnb")
-    model = FluxTransformer2DModel.from_pretrained(
-        "flux-hyper-fp16",
-        quantization_config=quant_config,
-        torch_dtype=torch.bfloat16
-    )
-    print("saving!!")
-    model.save_pretrained("flux-hyper-q8", max_shard_size="32GB")
+    # del model
+    # quant_config = BitsAndBytesConfig(load_in_8bit=True)
+    # print("loading into bnb")
+    # model = FluxTransformer2DModel.from_pretrained(
+    #     "flux-hyper-fp16",
+    #     quantization_config=quant_config,
+    #     torch_dtype=torch.bfloat16
+    # )
+    # print("saving!!")
+    # model.save_pretrained("flux-hyper-q8", max_shard_size="32GB")
 
 
 if __name__ == "__main__":

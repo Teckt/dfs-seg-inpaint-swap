@@ -161,16 +161,16 @@ def get_pipeline(r, is_server):
 def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_client:SocketClient, job_processor):
     # determine which pipeline to load
     if pipeline.is_server:
-        pipeline.settings.map_dfs_options(options)
+        pipeline.settings.map_dfs_options(options, pipeline.model)
         if not isinstance(pipeline.settings, CogSettings) and not isinstance(pipeline.settings, WanSettings):
             # all models should be fused with either hyper or turbo so keep this at 8
-            if pipeline.settings.options["num_inference_steps"] != 8:
-                print("setting num_inference_steps to 8 for turbo")
-                pipeline.settings.options["num_inference_steps"] = 8
+            # if pipeline.settings.options["num_inference_steps"] != 8:
+            #     print("setting num_inference_steps to 8 for turbo")
+            #     pipeline.settings.options["num_inference_steps"] = 8
 
             if pipeline.model == "fill":
                 print("setting guidance_scale to 30 for repainter")
-                pipeline.settings.options["guidance_scale"] = 30
+                pipeline.settings.options["guidance_scale"] = pipeline.settings.options["guidance_scale"]*10
             elif 1.0 > pipeline.settings.options["guidance_scale"] or 10 < pipeline.settings.options[
                 "guidance_scale"]:
                 print("setting guidance_scale to 3.5 for turbo")
@@ -253,7 +253,7 @@ def maybe_switch_pipelines(pipeline_switch_server, pipeline):
         pass
 
 
-def run(r="flux", is_server=True):
+def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
     
     pipe_map = {"flux": 0, "flux-fill": 0, "sd15": 1, "sd15-fill": 1}
     # if 'fill' in r:
@@ -272,10 +272,11 @@ def run(r="flux", is_server=True):
     pipeline = get_pipeline(r, is_server)
 
     if is_server:
-        machine_id = f'OVERLORD4-0'  # use -3 or -0 because -2 is weird
 
         RepaintJobProcesser.make_dirs(JOB_DIR)
         firestoreFunctions = FirestoreFunctions()
+        FirestoreFunctions.machine_id = machine_id
+        firestoreFunctions.machine_id = machine_id
         job_processor = RepaintJobProcesser()
 
         job_order = 0
@@ -405,14 +406,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-r", "--r", default='flux-fill')
     parser.add_argument("-s", "--is_server", default=True, action='store_true')
+    parser.add_argument("-m", "--machine_id", default='OVERLORD4-0')
 
     args = parser.parse_args()
     r = args.r
     is_server = args.is_server
+    machine_id = args.machine_id
     pipe_ids = ("flux", "flux-fill", "sd15", "sd15-fill", "cog-i2v", "wan-480")
     if r not in pipe_ids:
         raise ValueError("r must be in one of pipe_ids:", pipe_ids)
-    print(f"running with {r},is_server={is_server}")
+    print(f"running with {r},is_server={is_server},machine_id={machine_id}")
 
     # run("cog-i2v", is_server=False)
-    run(r, is_server=is_server)
+    run(r, is_server=is_server, machine_id=machine_id)

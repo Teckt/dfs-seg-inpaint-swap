@@ -122,6 +122,9 @@ class Redresser:
         if generator is not None:
             args["generator"] = generator
 
+        if self.is_server:
+            args["callback_on_step_end"] = update_progress
+
         with torch.inference_mode():
             output = self.pipe_manager.pipe(
                 **args
@@ -166,8 +169,8 @@ class Redresser:
         prompt = self.settings.options["prompt"]
         prompt = self.pipe_manager.apply_flux_loras_with_prompt(prompt)
 
-        height = self.settings.options.get("height", self.settings.options["max_side"])
-        width = self.settings.options.get("width", self.settings.options["max_side"])
+        height = self.settings.options.get("height", self.settings.options["height"])
+        width = self.settings.options.get("width", self.settings.options["width"])
 
         args = {
             "prompt": prompt,
