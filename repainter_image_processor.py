@@ -326,7 +326,8 @@ class ImageProcessor:
                 hand_mask = np.array(hand_mask, dtype=np.uint8)
 
                 seg_img[hand_mask > 127] = 0
-            seg_img[pad_mask==255] = 255
+            if pad_mask is not None:
+                seg_img[pad_mask == 255] = 255
             seg_img = Image.fromarray(seg_img).convert('RGB')
             if seg_path is not None and SAVE_SEG_IMAGES:
                 seg_img.save(seg_path + "-face.png")
