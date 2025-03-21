@@ -12,7 +12,7 @@ from redresser_utils import RedresserSettings, ImageResizeParams, yolo8_extract_
 import cv2
 import PIL.Image as Image
 import numpy as np
-
+from CONSTANTS import *
 
 class ImageProcessor:
     def __init__(self):
@@ -64,7 +64,10 @@ class ImageProcessor:
     def prepare_inputs(self, image_path, mask_path, max_side, center_crop, seg_image_dir="seg"):
         if seg_image_dir is not None:
             if not os.path.exists(seg_image_dir):
-                os.mkdir(seg_image_dir)
+                try:
+                    os.mkdir(seg_image_dir)
+                except Exception as e:
+                    print(f"Error when making dir {seg_image_dir}", e)
             seg_path = f"{seg_image_dir}\\{os.path.basename(image_path)}"
         else:
             seg_path = f"{os.path.basename(image_path)}-seg.png" #{str(video_index).zfill(5)}
@@ -289,7 +292,7 @@ class ImageProcessor:
         # process and segment the image (hands)
         if self.settings.options["keep_hands"]:
             _, seg_img_hands = yolo_segment_image(self.hand_seg_model, image)[0]
-            if seg_path is not None:
+            if seg_path is not None and SAVE_SEG_IMAGES:
                 seg_img_hands.save(seg_path + "-hands.png")
         # if seg_image_dir is None or not os.path.exists(seg_path):
         #     # process and segment the image
@@ -314,7 +317,7 @@ class ImageProcessor:
                 # seg_img = np.array(seg_img, dtype=np.uint8)
                 seg_img[face_mask > 25] = 0  # set all pixels to black if face_mask(white fill) is above noise level
 
-                if seg_path is not None:
+                if seg_path is not None and SAVE_SEG_IMAGES:
                     Image.fromarray(face_mask).save(seg_path + "-face_mask.png")
 
             if self.settings.options["keep_hands"]:  # removes hands from seg; used to keep hands intact
@@ -325,7 +328,7 @@ class ImageProcessor:
                 seg_img[hand_mask > 127] = 0
             seg_img[pad_mask==255] = 255
             seg_img = Image.fromarray(seg_img).convert('RGB')
-            if seg_path is not None:
+            if seg_path is not None and SAVE_SEG_IMAGES:
                 seg_img.save(seg_path + "-face.png")
         else:
             seg_img = Image.fromarray(seg_img).convert('RGB')

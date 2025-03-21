@@ -36,3 +36,4 @@ OUTPUT_FILE_BASE_NAME = "outputImage.png"  # the default name to give for every 
 CRED_PATH = 'firebase_cred.json'  # firebase credentials; os JOIN WITH ".." to use parent dir as root
 STORAGE_BUCKET_ID = 'df-studio-1.appspot.com'  # fire storage bucket id
 JOB_DIR = "df-maker-files"  # the directory to store DFS files
+SAVE_SEG_IMAGES = False  # save and debug mask images
