@@ -24,6 +24,7 @@ from flux_pipe import MyFluxPipe
 
 
 class Redresser:
+    total_steps = 8  # a hack for now for the end of steps callback
 
     def __init__(self, is_server=False, local_files_only=True, model="flux-fill"):
         '''
@@ -123,6 +124,7 @@ class Redresser:
             args["generator"] = generator
 
         if self.is_server:
+            Redresser.total_steps = args["num_inference_steps"]
             args["callback_on_step_end"] = update_progress
 
         with torch.inference_mode():
@@ -374,7 +376,7 @@ class ImageGenerator:
 def update_progress(pipeline, i, t, callback_kwargs):
     # print("i", i, "t", t,)
     FirestoreFunctions.repaintImageJobsRef.document(FirestoreFunctions.job_id).set(
-        {"swappedFramesProgress": int(100*(i/8))}, merge=True
+        {"swappedFramesProgress": int(100*(i/Redresser.total_steps))}, merge=True
     )
 
     return callback_kwargs
