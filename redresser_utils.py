@@ -205,6 +205,7 @@ class RedresserSettings:
         self.options["prompt"] = dfs_options.get("prompt", "")
 
         if model == "fill":
+            print("setting guidance_scale to 10x for repainter")
             self.options["guidance_scale"] = dfs_options.get("cfg", 3.0) * 10
             self.options["num_inference_steps"] = dfs_options.get("steps", 8)
 
@@ -215,7 +216,12 @@ class RedresserSettings:
             self.options["keep_hands"] = dfs_options.get("preserveHands", True)
             self.options["keep_face"] = dfs_options.get("preserveHead", True)
         else:
-            self.options["guidance_scale"] = dfs_options.get("cfg", 3.5)
+            cfg = dfs_options.get("cfg", 3.5)
+            if 1.0 > cfg or 10 < cfg:
+                print("setting guidance_scale to 3.5 for turbo")
+                cfg = 3.5
+
+            self.options["guidance_scale"] = cfg
             self.options["num_inference_steps"] = dfs_options.get("steps", 8)
 
             self.options["height"] = dfs_options.get("height", 1024)

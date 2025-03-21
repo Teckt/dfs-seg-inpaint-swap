@@ -167,14 +167,8 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
             # if pipeline.settings.options["num_inference_steps"] != 8:
             #     print("setting num_inference_steps to 8 for turbo")
             #     pipeline.settings.options["num_inference_steps"] = 8
+            pass
 
-            if pipeline.model == "fill":
-                print("setting guidance_scale to 30 for repainter")
-                pipeline.settings.options["guidance_scale"] = pipeline.settings.options["guidance_scale"]*10
-            elif 1.0 > pipeline.settings.options["guidance_scale"] or 10 < pipeline.settings.options[
-                "guidance_scale"]:
-                print("setting guidance_scale to 3.5 for turbo")
-                pipeline.settings.options["guidance_scale"] = 3.5
         print("mapped settings", pipeline.settings.options)
 
     else:
