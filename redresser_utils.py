@@ -213,8 +213,13 @@ class RedresserSettings:
             self.options["padding"] = dfs_options.get("padding", 0)
             self.options["center_crop"] = dfs_options.get("center_crop", False)
             self.options["SEGMENT_ID"] = RedresserSettings.SEGMENT_PERSON  # dfs_options.get("autoMaskOption", RedresserSettings.SEGMENT_PERSON)
-            self.options["keep_hands"] = dfs_options.get("preserveHands", True)
-            self.options["keep_face"] = dfs_options.get("preserveHead", True)
+
+            if dfs_options.get("maskOption") == 0:
+                self.options["keep_hands"] = dfs_options.get("preserveHands", True)
+                self.options["keep_face"] = dfs_options.get("preserveHead", True)
+            else:
+                self.options["keep_hands"] = False
+                self.options["keep_face"] = False
 
             if self.options["max_side"] == 0:
                 self.options["max_side"] = 1024

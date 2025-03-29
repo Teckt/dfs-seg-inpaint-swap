@@ -78,12 +78,8 @@ class Redresser:
                     aligned_cropped_image = load_image(face_data['aligned_cropped_image_path'], "numpy")
                     seg_mask = load_image(face_data['seg_mask_path'], "numpy")
                     yolo_results[image_index][face_index]['aligned_cropped_params'] = face_data[ 'aligned_cropped_params']
-                else:
-                    aligned_cropped_image = None
-                    seg_mask = None
-                    yolo_results[image_index][face_index]['aligned_cropped_params'] = None
-                yolo_results[image_index][face_index]['aligned_cropped_image'] = aligned_cropped_image
-                yolo_results[image_index][face_index]['seg_mask'] = seg_mask
+                    yolo_results[image_index][face_index]['aligned_cropped_image'] = aligned_cropped_image
+                    yolo_results[image_index][face_index]['seg_mask'] = seg_mask
 
         return batch_frames, orig_imgs, seg_imgs, control_images_inpaint, control_images_p, yolo_results, image_resize_params, image_path
 

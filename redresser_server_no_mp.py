@@ -304,7 +304,7 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
                     print(f'job started! keeping same job type ({job_type}) for next loop, sleeping 1 second...')
                     job_order -= 1
                     sys.stdout.flush()
-                    time.sleep(1)
+                    time.sleep(0.5)
                     continue
                 else:
                     job_to_lock = firestoreFunctions.get_jobs(job_type=job_type, resolutions=[], repaint_mode=repaint_mode)
@@ -314,7 +314,7 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
                         print(f'job locked! keeping same job type ({job_type}) for next loop, sleeping 1 second...')
                         job_order -= 1
                         sys.stdout.flush()
-                        time.sleep(1)
+                        time.sleep(0.5)
                         continue
                     else:
                         # Get the current date and time
@@ -370,7 +370,7 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
                 job_processor.complete_job()
                 print("job completed")
             sys.stdout.flush()
-            time.sleep(5)
+            time.sleep(0.5)
     else:
 
         if r == "cog-i2v":
