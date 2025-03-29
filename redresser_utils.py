@@ -177,7 +177,7 @@ class RedresserSettings:
         "prompt": "",
         "image": "dance",
         # "mask": "seg/00000.png",
-        "guidance_scale": 30,
+        "guidance_scale": 3.5,
         "num_inference_steps": 8,
         # "negative_prompt": None,
         # "strength": None,
@@ -215,6 +215,9 @@ class RedresserSettings:
             self.options["SEGMENT_ID"] = RedresserSettings.SEGMENT_PERSON  # dfs_options.get("autoMaskOption", RedresserSettings.SEGMENT_PERSON)
             self.options["keep_hands"] = dfs_options.get("preserveHands", True)
             self.options["keep_face"] = dfs_options.get("preserveHead", True)
+
+            if self.options["max_side"] == 0:
+                self.options["max_side"] = 1024
         else:
             cfg = dfs_options.get("cfg", 3.5)
             if 1.0 > cfg or 10 < cfg:
@@ -226,6 +229,11 @@ class RedresserSettings:
 
             self.options["height"] = dfs_options.get("height", 1024)
             self.options["width"] = dfs_options.get("width", 1024)
+
+            if self.options["height"] == 0:
+                self.options["height"] = 1024
+            if self.options["width"] == 0:
+                self.options["width"] = 1024
 
         self.options["runs"] = dfs_options.get("runs", 1)
 
