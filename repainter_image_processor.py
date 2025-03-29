@@ -230,15 +230,16 @@ class ImageProcessor:
             for (face_index, face_data) in yolo_result.items():
                 if face_index not in socket_yolo_results[image_index].keys():
                     socket_yolo_results[image_index][face_index] = {}
-                aligned_cropped_image_path = save_image(
-                    face_data['aligned_cropped_image'],
-                    os.path.join(output_dir, f"yolo_{image_index}_{face_index}_aligned_cropped_image.png"))
-                seg_mask_path = save_image(
-                    face_data['seg_mask'],
-                    os.path.join(output_dir, f"yolo_{image_index}_{face_index}_seg_mask.png"))
-                socket_yolo_results[image_index][face_index]['aligned_cropped_image_path'] = aligned_cropped_image_path
-                socket_yolo_results[image_index][face_index]['seg_mask_path'] = seg_mask_path
-                socket_yolo_results[image_index][face_index]['aligned_cropped_params'] = face_data['aligned_cropped_params']
+                if 'aligned_cropped_image' in face_data.keys():
+                    aligned_cropped_image_path = save_image(
+                        face_data['aligned_cropped_image'],
+                        os.path.join(output_dir, f"yolo_{image_index}_{face_index}_aligned_cropped_image.png"))
+                    seg_mask_path = save_image(
+                        face_data['seg_mask'],
+                        os.path.join(output_dir, f"yolo_{image_index}_{face_index}_seg_mask.png"))
+                    socket_yolo_results[image_index][face_index]['aligned_cropped_image_path'] = aligned_cropped_image_path
+                    socket_yolo_results[image_index][face_index]['seg_mask_path'] = seg_mask_path
+                    socket_yolo_results[image_index][face_index]['aligned_cropped_params'] = face_data['aligned_cropped_params']
         return socket_yolo_results
 
     def process_image_for_segmentation(self, image, mask, video_index, image_resize_params, seg_path,
