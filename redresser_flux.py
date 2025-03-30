@@ -188,6 +188,7 @@ class Redresser:
         }
 
         if self.is_server:
+            Redresser.total_steps = args["num_inference_steps"]
             args["callback_on_step_end"] = update_progress
 
         # if self.settings.options["negative_prompt"] is not None:
