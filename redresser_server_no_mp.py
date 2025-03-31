@@ -399,7 +399,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("-r", "--r", default='flux')
-    parser.add_argument("-s", "--is_server", default=False, action='store_true')
+    parser.add_argument("-s", "--is_server", default=True, action='store_true')
     parser.add_argument("-m", "--machine_id", default='OVERLORD4-0')
 
     args = parser.parse_args()

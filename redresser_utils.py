@@ -605,10 +605,10 @@ class SocketClient:
 
 
 def push_model_to_hub():
-    # from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
+    from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
     # cog_model_id = "D:/huggingface/models--THUDM--CogVideoX-5b-I2V/snapshots/c5c783ca1606069b9996dc56f207cc2e681691ed"
     #
-    # quant_config = DiffusersBitsAndBytesConfig(load_in_4bit=True)
+    quant_config = DiffusersBitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16)
     # model = CogVideoXTransformer3DModel.from_pretrained(
     #     cog_model_id,
     #     subfolder="transformer",
@@ -625,39 +625,41 @@ def push_model_to_hub():
     # print("pushing to hub")
     # model.push_to_hub("cogvideox-nf4")
     print("loading model")
-    model = FluxTransformer2DModel.from_single_file(
-        "C:\\Users\\teckt\\.cache\\huggingface\\hub\\models--Kijai--flux-fp8\\snapshots\\e77f550e3fe8be226884d5944a40abdbe4735ff5\\flux1-dev-fp8.safetensors",
+    model = FluxTransformer2DModel.from_pretrained(
+        FLUX_FILL_PATH,
+        # "C:\\Users\\teckt\\.cache\\huggingface\\hub\\models--Kijai--flux-fp8\\snapshots\\e77f550e3fe8be226884d5944a40abdbe4735ff5\\flux1-dev-fp8.safetensors",
         subfolder="transformer",
-        # quantization_config=quant_config,
+        quantization_config=quant_config,
         torch_dtype=torch.bfloat16, local_files_only=True)
 
     # model.to("cuda")
-    # model.save_pretrained("t5-encoder-fp16", max_shard_size="16GB")
-    with tqdm(range(4), desc="Fusing hyper lora") as p:
-        model.load_lora_adapter(
-            hf_hub_download(FUSE_HYPER_LORA_REPO, FUSE_HYPER_LORA_MODEL_FILE),
-            adapter_name="hyper")
-        p.update()
-        p.desc = "Setting adapter"
-        lora_settings = {"adapter_names": ["hyper"],
-                         "weights": [.125]}
-        model.set_adapters(**lora_settings)
-        p.update()
-        p.desc = "Fusing lora"
-        model.fuse_lora()
-        p.update()
-        p.desc = "Unloading lora"
-        model.unload_lora()
-        p.desc = "Deleting adapter"
-        model.delete_adapters(["hyper"])
-        p.update()
+    print("saving model")
+    model.save_pretrained("flux-fill-nf4", max_shard_size="16GB")
+    # with tqdm(range(4), desc="Fusing hyper lora") as p:
+    #     model.load_lora_adapter(
+    #         hf_hub_download(FUSE_HYPER_LORA_REPO, FUSE_HYPER_LORA_MODEL_FILE),
+    #         adapter_name="hyper")
+    #     p.update()
+    #     p.desc = "Setting adapter"
+    #     lora_settings = {"adapter_names": ["hyper"],
+    #                      "weights": [.125]}
+    #     model.set_adapters(**lora_settings)
+    #     p.update()
+    #     p.desc = "Fusing lora"
+    #     model.fuse_lora()
+    #     p.update()
+    #     p.desc = "Unloading lora"
+    #     model.unload_lora()
+    #     p.desc = "Deleting adapter"
+    #     model.delete_adapters(["hyper"])
+    #     p.update()
 
     # print("pushing to hub")
-    print("converting to f8")
-    model.to(torch.float8_e4m3fn)
-    print("saving")
-    model.save_pretrained("flux-hyper-fp8", max_shard_size="32GB")
-    # model.push_to_hub("flux-hyper-fp16", max_shard_size="32GB")
+    # print("converting to f8")
+    # model.to(torch.float8_e4m3fn)
+    # print("saving")
+    # model.save_pretrained("flux-hyper-fp8", max_shard_size="32GB")
+    # model.push_to_hub("flux-fill-nf4")
     # del model
     # quant_config = BitsAndBytesConfig(load_in_8bit=True)
     # print("loading into bnb")

@@ -13,6 +13,7 @@ USE_SEQUENTIAL_CPU_OFFLOAD = False  # bigger vram savings
 
 USE_CUSTOM_FLUX = True
 FLUX_CUSTOM_PATH = "Anyfusion/flux-nf4"  # the pretrained path to the custom model
+USE_CUSTOM_FLUX_FILL = True
 FLUX_FILL_CUSTOM_PATH = 'Anyfusion/flux-fill-hyper-nf4'  # the pretrained path to the custom fill model
 
 FUSE_HYPER_LORA = False  # whether to fuse hyper lora with transformer

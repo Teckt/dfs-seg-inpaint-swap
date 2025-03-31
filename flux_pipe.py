@@ -35,10 +35,11 @@ class MyFluxPipe:
 
         self.dtype = torch.bfloat16
         self.lora_path = LORA_PATH
-        if USE_CUSTOM_FLUX:
-            self.flux_model_name = FLUX_FILL_CUSTOM_PATH if fill else FLUX_CUSTOM_PATH
+
+        if fill:
+            self.flux_model_name = FLUX_FILL_CUSTOM_PATH if USE_CUSTOM_FLUX_FILL else FLUX_FILL_PATH
         else:
-            self.flux_model_name = FLUX_FILL_PATH if fill else FLUX_PATH
+            self.flux_model_name = FLUX_CUSTOM_PATH if USE_CUSTOM_FLUX else FLUX_PATH
 
         # load VAE
         # with tqdm(range(1), "Loading flux_vae"):
@@ -86,7 +87,7 @@ class MyFluxPipe:
             "local_files_only": USE_LOCAL_FILES
         }
 
-        transformer =  self.load_transformer()
+        transformer = self.load_transformer()
 
         print("loading pipeline")
         if fill:
@@ -104,8 +105,8 @@ class MyFluxPipe:
         # fuse lora before quantizing
         if FUSE_HYPER_LORA:
             self.fuse_hyper_lora()
-        # quantize
-        if not USE_BNB and USE_OPTIMUM_QUANTO:
+        # quantize if original flux models
+        if not USE_BNB and USE_OPTIMUM_QUANTO and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
             self.quanto_quantize()
 
         if SAVE_MODEL and not os.path.exists(
@@ -136,7 +137,8 @@ class MyFluxPipe:
                 self.pipe.enable_sequential_cpu_offload()
             else:
                 self.pipe.to("cuda")
-        elif USE_BNB:
+        # move to cuda if original flux models only
+        elif USE_BNB and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
             self.pipe.to("cuda")
             # self.pipe.enable_model_cpu_offload()
         else:
@@ -165,10 +167,10 @@ class MyFluxPipe:
 
     def switch_pipe(self, fill):
         self.is_fill = fill
-        if USE_CUSTOM_FLUX:
-            self.flux_model_name = FLUX_FILL_CUSTOM_PATH if fill else FLUX_CUSTOM_PATH
+        if fill:
+            self.flux_model_name = FLUX_FILL_CUSTOM_PATH if USE_CUSTOM_FLUX_FILL else FLUX_FILL_PATH
         else:
-            self.flux_model_name = FLUX_FILL_PATH if fill else FLUX_PATH
+            self.flux_model_name = FLUX_CUSTOM_PATH if USE_CUSTOM_FLUX else FLUX_PATH
 
         if torch.cuda.is_available():
             device = torch.device("cuda")
@@ -222,7 +224,8 @@ class MyFluxPipe:
                 self.pipe.disable_sequential_cpu_offload()
             else:
                 self.pipe.transformer.to("cpu")
-        elif USE_BNB:
+        # move to cpu if original flux models only
+        elif USE_BNB and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
             self.pipe.transformer.to("cpu")
             # self.pipe.enable_model_cpu_offload()
         else:
@@ -253,7 +256,8 @@ class MyFluxPipe:
                 self.pipe.enable_sequential_cpu_offload()
             else:
                 self.pipe.transformer.to("cuda")
-        elif USE_BNB:
+        # move to cuda if original flux models only
+        elif USE_BNB and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
             self.pipe.transformer.to("cuda")
             # self.pipe.enable_model_cpu_offload()
         else:
@@ -303,7 +307,8 @@ class MyFluxPipe:
         transformer_args = {
             "torch_dtype": self.dtype, "local_files_only": USE_LOCAL_FILES
         }
-        if USE_BNB:
+        # only use BNB if original flux models
+        if USE_BNB and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
             quant_config = DiffusersBitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16)
             transformer_args["quantization_config"] = quant_config
 
@@ -395,6 +400,9 @@ class MyFluxPipe:
                         adapter_name=adapter_name_filtered_for_periods)
                     print("Loaded lora into pipe from", lora_file)
                 except huggingface_hub.errors.RepositoryNotFoundError:
+                    print("WARNING:", lora_file, "does not exist.", "Ignoring.")
+                    continue
+                except:
                     print("WARNING:", lora_file, "does not exist.", "Ignoring.")
                     continue
 
