@@ -94,8 +94,12 @@ class ImageProcessor:
             # frame, pad_mask, mask = pad_image(frame, mask, options_padding, use_noise=True)
             h, w = frame.shape[:2]
 
+        # image_resize_params = ImageResizeParams(
+        #     h=h, w=w, max_side=max_side, center_crop=center_crop)
         image_resize_params = ImageResizeParams(
-            h=h, w=w, max_side=max_side, center_crop=center_crop)
+            h=h, w=w, max_side=max_side, center_crop=center_crop,
+            max_area=max_side*max_side  # overrides other args because this depends on the image dimensions
+        )
         frame = image_resize_params.apply_params(frame)
         if options_padding > 0:
             pad_mask = image_resize_params.apply_params(pad_mask)

@@ -1,3 +1,4 @@
+import math
 import time
 import socket
 import pickle
@@ -326,8 +327,12 @@ class RedresserSettings:
 
 class ImageResizeParams:
     # contains the modified h and w along with the crop coords in x1x2y1y2
-    def __init__(self, h, w, max_side, center_crop):
+    def __init__(
+            self, h, w, max_side, center_crop,
+            max_area=None  # overrides other args because this depends on the image dimensions
+    ):
         self.center_crop = center_crop
+        self.max_area = max_area
         if center_crop:
             new_w = new_h = min(w, h)
             self.xmin = int((max(w, h) - h) / 2)
@@ -347,6 +352,12 @@ class ImageResizeParams:
             assert new_w > 0 and new_h > 0
             print("new_w", new_w, "new_h", new_h)
 
+    def get_dimensions_from_area_and_ratio_wh(self, area, ratio_wh):
+        self.new_h = int(math.sqrt(area / ratio_wh))
+        self.new_w = int(ratio_wh * self.new_h)
+
+        return self.new_w, self.new_h
+
     def apply_params(self, image):
         if isinstance(image, Image.Image):
             if self.center_crop:
@@ -355,13 +366,23 @@ class ImageResizeParams:
                 image = cv2.resize(image, (self.new_w, self.new_h), interpolation=cv2.INTER_CUBIC)
                 image = Image.fromarray(image)
             else:
-                image.resize((self.new_w, self.new_h))
+                if self.max_area is None:
+                    image.resize((self.new_w, self.new_h))
+                else:
+                    ratio = image.width / image.height
+                    new_w, new_h = self.get_dimensions_from_area_and_ratio_wh(area=self.max_area, ratio_wh=ratio)
+                    image.resize((new_w, new_h))
         elif isinstance(image, np.ndarray):
             if self.center_crop:
                 image = image[self.ymin:self.ymax, self.xmin:self.xmax, :]
                 image = cv2.resize(image, (self.new_w, self.new_h), interpolation=cv2.INTER_CUBIC)
             else:
-                image = cv2.resize(image, (self.new_w, self.new_h), interpolation=cv2.INTER_CUBIC)
+                if self.max_area is None:
+                    image = cv2.resize(image, (self.new_w, self.new_h), interpolation=cv2.INTER_CUBIC)
+                else:
+                    ratio = image.shape[1] / image.shape[0]
+                    new_w, new_h = self.get_dimensions_from_area_and_ratio_wh(area=self.max_area, ratio_wh=ratio)
+                    image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
 
         return image
 
@@ -386,7 +407,6 @@ def make_inpaint_condition(image, image_mask, mask_threshold=0.5):
     image = np.expand_dims(image, 0).transpose(0, 3, 1, 2)
     image = torch.from_numpy(image)
     return image
-
 
 def yolo8_extract_faces(face_extractor, face_seg_model, inputs, max_faces, conf_threshold, landmarks_padding_ratio, include_orig_img=False, face_swapper_input_size=(224, 224)):
     _outputs = face_extractor(inputs, tracker=False)  # frames in rgb, convert to PIL if necessary
