@@ -211,7 +211,7 @@ class RedresserSettings:
             print("setting guidance_scale to 10x for repainter")
             self.options["guidance_scale"] = dfs_options.get("cfg", 3.0) * 10
 
-            if "hyper" in FLUX_FILL_PATH.lower():
+            if USE_CUSTOM_FLUX_FILL and "hyper" in USE_CUSTOM_FLUX_FILL.lower():
                 self.options["num_inference_steps"] = 8
             else:
                 self.options["num_inference_steps"] = dfs_options.get("steps", 8)
@@ -236,7 +236,7 @@ class RedresserSettings:
                 print("setting guidance_scale to 3.5 for turbo")
                 cfg = random.uniform(3.0, 4.0)
 
-            if "hyper" in FLUX_PATH.lower():
+            if USE_CUSTOM_FLUX and "hyper" in FLUX_CUSTOM_PATH.lower():
                 cfg = 3.5
                 self.options["num_inference_steps"] = 8
             else:
