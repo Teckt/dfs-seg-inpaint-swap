@@ -1,4 +1,5 @@
 import math
+import random
 import time
 import socket
 import pickle
@@ -7,6 +8,7 @@ import cv2
 from PIL import Image
 import torch
 import os
+from CONSTANTS import *
 
 from diffusers import FluxTransformer2DModel, CogVideoXTransformer3DModel, GGUFQuantizationConfig, BitsAndBytesConfig
 from huggingface_hub import hf_hub_download
@@ -208,7 +210,11 @@ class RedresserSettings:
         if model == "fill":
             print("setting guidance_scale to 10x for repainter")
             self.options["guidance_scale"] = dfs_options.get("cfg", 3.0) * 10
-            self.options["num_inference_steps"] = dfs_options.get("steps", 8)
+
+            if "hyper" in FLUX_FILL_PATH.lower():
+                self.options["num_inference_steps"] = 8
+            else:
+                self.options["num_inference_steps"] = dfs_options.get("steps", 8)
 
             self.options["max_side"] = dfs_options.get("size", 1024)
             self.options["padding"] = dfs_options.get("padding", 0)
@@ -228,11 +234,15 @@ class RedresserSettings:
             cfg = dfs_options.get("cfg", 3.5)
             if 1.0 > cfg or 10 < cfg:
                 print("setting guidance_scale to 3.5 for turbo")
+                cfg = random.uniform(3.0, 4.0)
+
+            if "hyper" in FLUX_PATH.lower():
                 cfg = 3.5
+                self.options["num_inference_steps"] = 8
+            else:
+                self.options["num_inference_steps"] = dfs_options.get("steps", 8)
 
             self.options["guidance_scale"] = cfg
-            self.options["num_inference_steps"] = dfs_options.get("steps", 8)
-
             self.options["height"] = dfs_options.get("height", 1024)
             self.options["width"] = dfs_options.get("width", 1024)
 
