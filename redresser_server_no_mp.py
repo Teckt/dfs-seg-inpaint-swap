@@ -120,15 +120,33 @@ class RepaintJobProcesser:
         :return:
         '''
         secs = time.time()
+        # 0 for t2i, 1 for repaint
+        if self.mode == 1:
+            if not FirestoreFunctions.send_job_file(
+                    local_file_full_path=self.input_file_path.replace(self.imageFileName, OUTPUT_ORIGINAL_FILE_BASE_NAME),
+                    file_name=f"{self.imageFileName}_original.png",
+                    firebase_storage_path=f"users/{self.userId}/redresserImageJobs/{self.job_id}",
+                    required=True
+            ):
+                raise ValueError("SWAPPED IMG DOESN'T EXIST")
+
+            if not FirestoreFunctions.send_job_file(
+                    local_file_full_path=self.input_file_path.replace(self.imageFileName, OUTPUT_MASK_FILE_BASE_NAME),
+                    file_name=f"{self.imageFileName}_mask.png",
+                    firebase_storage_path=f"users/{self.userId}/redresserImageJobs/{self.job_id}",
+                    required=True
+            ):
+                raise ValueError("SWAPPED MASK IMG DOESN'T EXIST")
+
         if not FirestoreFunctions.send_job_file(
-                local_file_full_path=self.input_file_path.replace(self.imageFileName, "outputImage.png"),
+                local_file_full_path=self.input_file_path.replace(self.imageFileName, OUTPUT_FILE_BASE_NAME),
                 file_name=f"{self.imageFileName}_repainted.png",
                 firebase_storage_path=f"users/{self.userId}/redresserImageJobs/{self.job_id}",
                 required=True
         ):
             raise ValueError("SWAPPED IMG DOESN'T EXIST")
 
-        print(f"sending image took {(time.time() - secs):.2f} secs")
+        print(f"sending images took {(time.time() - secs):.2f} secs")
         while True:
             try:
                 FirestoreFunctions.repaintImageJobsRef.document(self.job_id).update({
@@ -136,8 +154,8 @@ class RepaintJobProcesser:
                     'endedTime': int(time.time()),
                 })
                 break
-            except:
-                print("Failed to update swapping doc jobStatus. retrying in 5 seconds...")
+            except Exception as e:
+                print(e, "Failed to update swapping doc jobStatus. retrying in 5 seconds...")
                 time.sleep(5)
 
 
@@ -397,7 +415,7 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("-r", "--r", default='flux')
+    parser.add_argument("-r", "--r", default='flux-fill')
     parser.add_argument("-s", "--is_server", default=True, action='store_true')
     parser.add_argument("-m", "--machine_id", default='OVERLORD4-0')
 

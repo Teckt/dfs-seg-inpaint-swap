@@ -140,6 +140,10 @@ class Redresser:
             basename = os.path.basename(image_path)
             redresser_dir = image_path.replace(basename, "")
             redresser_output_file_path = f"{redresser_dir}/{OUTPUT_FILE_BASE_NAME}"
+
+            redresser_output_mask_file_path = f"{redresser_dir}/{OUTPUT_MASK_FILE_BASE_NAME}"
+
+            redresser_output_original_file_path = f"{redresser_dir}/{OUTPUT_ORIGINAL_FILE_BASE_NAME}"
         else:
 
             if os.path.exists(image_path):
@@ -150,12 +154,26 @@ class Redresser:
                 redresser_dir = REPAINT_OUTPUT_DIR
 
             redresser_output_file_path = f"{redresser_dir}/{seed}-{self.settings.options['guidance_scale']}-{self.settings.options['num_inference_steps']}-{OUTPUT_FILE_BASE_NAME}"
+            redresser_output_mask_file_path = f"{redresser_dir}/{seed}-{self.settings.options['guidance_scale']}-{self.settings.options['num_inference_steps']}-{OUTPUT_MASK_FILE_BASE_NAME}"
+            redresser_output_original_file_path = None
             if not os.path.exists(redresser_dir):
                 os.mkdir(redresser_dir)
 
         for image_idx, image in enumerate(final_pil_images):
             print("image_idx", image_idx, "image", image, image.info)
             image.save(redresser_output_file_path)
+
+            mask = seg_imgs[image_idx]
+
+            np_mask = np.array(mask)
+            np_mask = np.expand_dims(np_mask, -1)
+            np_mask = np.concatenate((np_mask[:, :, 0], np_mask[:, :, 0]), axis=-1)
+            np_mask = Image.fromarray(np_mask)
+            np_mask.save(redresser_output_mask_file_path)
+
+            if redresser_output_original_file_path is not None:
+                original = orig_imgs[image_idx]
+                original.save(redresser_output_original_file_path)
             # image.save(f"{time_id}_{str(image_idx).zfill(5)}.png")
 
     def run_t2i(self):
