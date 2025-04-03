@@ -299,11 +299,6 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
         }
 
         while True:
-            utc_time = datetime.datetime.now(datetime.timezone.utc)
-            firestoreFunctions.db.collection("repainterServers").document(machine_id).set(
-                {"lastActiveTime": utc_time}
-            )
-
             # check for switching pipelines here
             maybe_switch_pipelines(pipeline=pipeline, pipeline_switch_server=pipeline_switch_server)
 
@@ -336,8 +331,13 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
                         firestoreFunctions.lock_job(job_type=job_type, job=job_to_lock)
                         print(f'job locked! keeping same job type ({job_type}) for next loop, sleeping 1 second...')
                         job_order -= 1
-                        sys.stdout.flush()
                         time.sleep(0.25)
+                        firestoreFunctions.db.collection("repainterServers").document(machine_id).set(
+                            {
+                                "lastActiveTime": datetime.datetime.now(datetime.timezone.utc),
+                                "isBusy": True
+                            }
+                        )
                         continue
                     else:
                         # Get the current date and time
@@ -346,7 +346,14 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
                         # Format and display the current time with AM/PM
                         formatted_time = current_time.strftime("%I:%M:%S %p")
                         print(f'\r[{formatted_time}]No jobs available for ({job_type}), sleeping 5 second...', end="")
-                        sys.stdout.flush()
+
+                        firestoreFunctions.db.collection("repainterServers").document(machine_id).set(
+                            {
+                                "lastActiveTime": datetime.datetime.now(datetime.timezone.utc),
+                                "isBusy": False
+                            }
+                        )
+
                         time.sleep(5)
                         continue
             FirestoreFunctions.job_id = started_job.id
@@ -383,6 +390,13 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
                 print("switching to fill")
                 pipeline.switch_pipeline("fill")
 
+            firestoreFunctions.db.collection("repainterServers").document(machine_id).set(
+                {
+                    "lastActiveTime": datetime.datetime.now(datetime.timezone.utc),
+                    "isBusy": True
+                }
+            )
+
             result = run_redresser_flux_process(
                 pipeline=pipeline, options=options,
                 img_client=img_client, pipe_server=pipe_server, job_processor=job_processor)
@@ -392,6 +406,13 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
             else:
                 job_processor.complete_job()
                 print("job completed")
+
+            firestoreFunctions.db.collection("repainterServers").document(machine_id).set(
+                {
+                    "lastActiveTime": datetime.datetime.now(datetime.timezone.utc),
+                    "isBusy": True
+                }
+            )
             job_order -= 1
     else:
 
