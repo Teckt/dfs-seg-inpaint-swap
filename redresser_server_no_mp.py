@@ -299,6 +299,10 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
         }
 
         while True:
+            firestoreFunctions.db.collection("repainterServers").document(machine_id).set(
+                {"lastActiveTime": datetime.datetime.utcnow()}
+            )
+
             # check for switching pipelines here
             maybe_switch_pipelines(pipeline=pipeline, pipeline_switch_server=pipeline_switch_server)
 
