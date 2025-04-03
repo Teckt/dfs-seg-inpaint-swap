@@ -380,22 +380,35 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
             # if pipeline is None:
             #     pipeline = get_pipeline(r, is_server)
 
+
             if int(job_dict["mode"]) == 0 and pipeline.model != "t2i":
+                firestoreFunctions.db.collection("repainterServers").document(machine_id).set(
+                    {
+                        "lastActiveTime": datetime.datetime.now(datetime.timezone.utc),
+                        "isBusy": True
+                    }
+                )
                 print(f"pipeline model ({pipeline.model}) and job mode {job_dict['mode']} does not match!")
                 print("switching to t2i")
                 pipeline.switch_pipeline("t2i")
 
-            if int(job_dict["mode"]) == 1 and pipeline.model != "fill":
+            elif int(job_dict["mode"]) == 1 and pipeline.model != "fill":
+                firestoreFunctions.db.collection("repainterServers").document(machine_id).set(
+                    {
+                        "lastActiveTime": datetime.datetime.now(datetime.timezone.utc),
+                        "isBusy": True
+                    }
+                )
                 print(f"pipeline model ({pipeline.model}) and job mode {job_dict['mode']} does not match!")
                 print("switching to fill")
                 pipeline.switch_pipeline("fill")
-
-            firestoreFunctions.db.collection("repainterServers").document(machine_id).set(
-                {
-                    "lastActiveTime": datetime.datetime.now(datetime.timezone.utc),
-                    "isBusy": True
-                }
-            )
+            else:
+                firestoreFunctions.db.collection("repainterServers").document(machine_id).set(
+                    {
+                        "lastActiveTime": datetime.datetime.now(datetime.timezone.utc),
+                        "isBusy": True
+                    }
+                )
 
             result = run_redresser_flux_process(
                 pipeline=pipeline, options=options,
