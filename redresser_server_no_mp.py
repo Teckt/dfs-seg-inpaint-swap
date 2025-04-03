@@ -299,8 +299,9 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
         }
 
         while True:
+            utc_time = datetime.datetime.now(datetime.timezone.utc)
             firestoreFunctions.db.collection("repainterServers").document(machine_id).set(
-                {"lastActiveTime": datetime.datetime.utcnow()}
+                {"lastActiveTime": utc_time}
             )
 
             # check for switching pipelines here
