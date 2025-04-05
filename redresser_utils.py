@@ -233,7 +233,7 @@ class RedresserSettings:
         else:
             cfg = dfs_options.get("cfg", 3.5)
             if 1.0 > cfg or 10 < cfg:
-                print("setting guidance_scale to 3.5 for turbo")
+                print("cfg Not 1-10, setting guidance_scale to 3-4")
                 cfg = random.uniform(3.0, 4.0)
 
             if USE_CUSTOM_FLUX and "hyper" in FLUX_CUSTOM_PATH.lower():

@@ -114,7 +114,7 @@ class RepaintJobProcesser:
         # # set the storage ref for checkpoints, face set zips and all other job specific files
         # self.userModelStorageRef = f"users/{self.userId}/faceModels/{self.faceModelId}"
 
-    def complete_job(self):
+    def complete_job(self, job_dict):
         '''
         uploads image to redresserImageJobs
         :return:
@@ -145,6 +145,8 @@ class RepaintJobProcesser:
                 required=True
         ):
             raise ValueError("SWAPPED IMG DOESN'T EXIST")
+
+        maybe_create_faceswap_job(job_dict=job_dict)
 
         print(f"sending images took {(time.time() - secs):.2f} secs")
         while True:
@@ -265,6 +267,38 @@ def maybe_switch_pipelines(pipeline_switch_server, pipeline):
         pass
 
 
+def maybe_create_faceswap_job(job_dict: dict):
+    """
+    checks for the face model name and id
+    :param job_dict: redresserImageJob dict
+    :return:
+    """
+    print(job_dict)
+    faceModelId = job_dict["faceModelId"]
+    if faceModelId == "":
+        return
+
+    # create doc in repainterImageFaceswapJob with same id
+    FirestoreFunctions.repaintImageFaceswapJobsRef.document(job_dict["id"]).set(
+        {
+            "userId": job_dict["userId"],
+            "jobStatus": "queued",
+            "faceModelId": job_dict["faceModelId"],
+            "queuedTime": int(time.time()),
+            "imageFileName": job_dict["imageFileName"]
+        }
+    )
+
+    # wait
+    while True:
+        doc = FirestoreFunctions.repaintImageFaceswapJobsRef.document(job_dict["id"]).get()
+        if str(doc.get("jobStatus")) in ["ended", "failed"]:
+            return
+
+        print(doc.to_dict(), "sleeping 5...")
+        time.sleep(5)
+
+
 def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
     
     pipe_map = {"flux": 0, "flux-fill": 0, "sd15": 1, "sd15-fill": 1}
@@ -361,6 +395,7 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
             image_path, mask_path = job_processor.download_image(started_job)
             # set the downloaded image path
             job_dict = started_job.to_dict()
+            job_dict["id"] = started_job.id
             options = job_dict.copy()
             options["image"] = image_path
 
@@ -417,7 +452,9 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
             if not result:
                 print("job failed?")
             else:
-                job_processor.complete_job()
+                # maybe_create_faceswap_job(job_dict)
+
+                job_processor.complete_job(job_dict)
                 print("job completed")
 
             firestoreFunctions.db.collection("repainterServers").document(machine_id).set(

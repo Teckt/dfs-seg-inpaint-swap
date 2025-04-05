@@ -53,6 +53,7 @@ class FirestoreFunctions:
     swappingJobsRef = db.collection(u'swappingJobs')
     swapImageJobsRef = db.collection(u'swapImageJobs')
     repaintImageJobsRef = db.collection(u'redresserImageJobs')
+    repaintImageFaceswapJobsRef = db.collection(u'redresserImageFaceswapJobs')
     usersRef = db.collection(u'users')
 
     currentJobRef = None
