@@ -294,7 +294,7 @@ class Redresser:
                     if np_image is None:
                         np_image = np.array(orig_imgs[image_idx])
                     swapped_image = np.array(image)  # unsharp_mask(extracted_data["aligned_cropped_image"], amount=.5)
-                    seg_mask = np.array(orig_imgs[seg_imgs])
+                    seg_mask = np.array(seg_imgs[image_idx])
                     seg_mask = cv2.blur(seg_mask, (3, 3))
                     seg_mask = np.clip(seg_mask + 1, 0, 255)
 
