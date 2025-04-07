@@ -8,6 +8,9 @@ import cv2
 from PIL import Image
 import torch
 import os
+
+from PIL.Image import Resampling
+
 from CONSTANTS import *
 
 from diffusers import FluxTransformer2DModel, CogVideoXTransformer3DModel, GGUFQuantizationConfig, BitsAndBytesConfig
@@ -377,11 +380,11 @@ class ImageResizeParams:
                 image = Image.fromarray(image)
             else:
                 if self.max_area is None:
-                    image.resize((self.new_w, self.new_h))
+                    image.resize((self.new_w, self.new_h), Resampling.BICUBIC)
                 else:
                     ratio = image.width / image.height
                     new_w, new_h = self.get_dimensions_from_area_and_ratio_wh(area=self.max_area, ratio_wh=ratio)
-                    image.resize((new_w, new_h))
+                    image.resize((new_w, new_h), Resampling.BICUBIC)
         elif isinstance(image, np.ndarray):
             if self.center_crop:
                 image = image[self.ymin:self.ymax, self.xmin:self.xmax, :]
