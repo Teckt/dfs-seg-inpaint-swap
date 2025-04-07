@@ -133,7 +133,7 @@ class Redresser:
                 **args
             )
 
-        final_pil_images = self.process_fill_outputs(output.images, yolo_results)
+        final_pil_images = self.process_fill_outputs(orig_imgs, seg_imgs, output.images, yolo_results)
 
         time_id = time.time()
         if self.is_server:
@@ -259,37 +259,59 @@ class Redresser:
 
         return final_pil_images
 
-    def process_fill_outputs(self, outputs, yolo_results):
+    def process_fill_outputs(self, orig_imgs, seg_imgs, outputs, yolo_results):
         final_pil_images = []
         final_cv2_images = []
         segment_id = self.settings.options["SEGMENT_ID"]
         for image_idx, image in enumerate(outputs):
 
-            np_image = np.array(image)
+            np_image = None
 
             # paste each original face back one by one; skip if segmenting face
-            if segment_id != RedresserSettings.SEGMENT_FACE and self.settings.options["keep_face"]:
-                for (face_index, face_data) in yolo_results[image_idx].items():
-                    # no keys = nothing extracted
+
+            for (face_index, face_data) in yolo_results[image_idx].items():
+                # no keys = nothing extracted
+                if segment_id != RedresserSettings.SEGMENT_FACE and self.settings.options["keep_face"]:
+                    if np_image is None:
+                        np_image = np.array(image)
+
                     if 'aligned_cropped_image' not in face_data.keys():
                         continue
-
                     swapped_image = face_data[
                         "aligned_cropped_image"]  # unsharp_mask(extracted_data["aligned_cropped_image"], amount=.5)
+                    seg_mask = face_data["seg_mask"]
+                    aligned_cropped_params = face_data["aligned_cropped_params"]
                     np_image = paste_swapped_image(
                         dst_image=np_image,
                         swapped_image=swapped_image,
-                        seg_mask=face_data["seg_mask"],
-                        aligned_cropped_params=face_data["aligned_cropped_params"],
+                        seg_mask=seg_mask,
+                        aligned_cropped_params=aligned_cropped_params,
                         seamless_clone=False,
                         blur_mask=True,
                         resize=False
                     )
-            np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2BGR)
-            final_cv2_images.append(np_image)
+                else:
+                    if np_image is None:
+                        np_image = np.array(orig_imgs[image_idx])
+                    swapped_image = np.array(image)  # unsharp_mask(extracted_data["aligned_cropped_image"], amount=.5)
+                    seg_mask = np.array(orig_imgs[seg_imgs])
+                    seg_mask = cv2.blur(seg_mask, (3, 3))
+                    seg_mask = np.clip(seg_mask + 1, 0, 255)
 
-            image = Image.fromarray(cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)).convert('RGB')
-            final_pil_images.append(image)
+                    if seg_mask.shape[-1] > 1:
+                        seg_mask = seg_mask[..., 0]
+                    if len(seg_mask.shape) == 2:
+                        seg_mask = np.expand_dims(seg_mask, axis=-1)
+
+                    center = (np_image.shape[1]//2, np_image.shape[0]//2)
+                    np_image = cv2.seamlessClone(swapped_image, np_image.astype(np.uint8), seg_mask,
+                                                     center, cv2.NORMAL_CLONE)
+
+            # np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2BGR)
+            # final_cv2_images.append(np_image)
+            #
+            # image = Image.fromarray(cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)).convert('RGB')
+            final_pil_images.append(Image.fromarray(image))
 
         return final_pil_images
 

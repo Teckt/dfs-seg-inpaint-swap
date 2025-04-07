@@ -271,6 +271,10 @@ def paste_swapped_image(dst_image, swapped_image, seg_mask, aligned_cropped_para
     return merged_image[..., :3]
 
 
+def paste_image_with_mask(dst_image, image_to_paste, mask):
+    pass
+
+
 def adjust_mask_for_image_black_areas_after_rotate(image, mask, order=0, size_factor=1.0):
     # create a mask where the black areas of the image is zeroes along all three channels and the rest are ones
     image_ones = np.all(image != 0, axis=-1, keepdims=True)
