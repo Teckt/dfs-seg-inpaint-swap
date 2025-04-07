@@ -11,7 +11,7 @@ from PIL import Image
 from huggingface_hub import hf_hub_download
 from CONSTANTS import *
 from fire_functions import FirestoreFunctions
-from tf_free_functions import paste_swapped_image
+from tf_free_functions import paste_swapped_image, paste_image_with_mask
 
 # from pipe_manager import SD15PipelineManager
 
@@ -294,24 +294,30 @@ class Redresser:
                     if np_image is None:
                         np_image = np.array(orig_imgs[image_idx])
                     swapped_image = np.array(image)  # unsharp_mask(extracted_data["aligned_cropped_image"], amount=.5)
+                    h, w = swapped_image.shape[:2]
                     seg_mask = np.array(seg_imgs[image_idx])
                     seg_mask = cv2.blur(seg_mask, (3, 3))
-                    seg_mask = np.clip(seg_mask + 1, 0, 255)
+                    seg_mask = np.clip(seg_mask, 0, 255)
 
                     if seg_mask.shape[-1] > 1:
                         seg_mask = seg_mask[..., 0]
                     if len(seg_mask.shape) == 2:
                         seg_mask = np.expand_dims(seg_mask, axis=-1)
 
-                    center = (np_image.shape[1]//2, np_image.shape[0]//2)
-                    np_image = cv2.seamlessClone(swapped_image, np_image.astype(np.uint8), seg_mask,
-                                                     center, cv2.NORMAL_CLONE)
+                    seg_mask = cv2.resize(seg_mask, (w, h), interpolation=cv2.INTER_CUBIC)
+                    np_image = cv2.resize(np_image, (w, h), interpolation=cv2.INTER_CUBIC)
 
-            # np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2BGR)
-            # final_cv2_images.append(np_image)
+                    np_image = paste_image_with_mask(np_image, swapped_image, seg_mask)
+
+                    # center = (np_image.shape[1]//2, np_image.shape[0]//2)
+                    # np_image = cv2.seamlessClone(swapped_image, np_image, seg_mask,
+                    #                                  center, cv2.NORMAL_CLONE)
+
+            np_image = cv2.cvtColor(np_image, cv2.COLOR_RGB2BGR)
+            final_cv2_images.append(np_image)
             #
-            # image = Image.fromarray(cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)).convert('RGB')
-            final_pil_images.append(Image.fromarray(image))
+            image = Image.fromarray(cv2.cvtColor(np_image, cv2.COLOR_BGR2RGB)).convert('RGB')
+            final_pil_images.append(image)
 
         return final_pil_images
 

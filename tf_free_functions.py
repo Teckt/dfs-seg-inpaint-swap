@@ -272,8 +272,30 @@ def paste_swapped_image(dst_image, swapped_image, seg_mask, aligned_cropped_para
 
 
 def paste_image_with_mask(dst_image, image_to_paste, mask):
-    pass
+    h, w = dst_image.shape[:2]
+    dtype = np.float32
+    alpha = mask.astype(dtype) / 255.
+    # alpha blend zeroes like and merged image
+    beta = (1.0 - alpha)
 
+    crop_x_min, crop_y_min, crop_x_max, crop_y_max = 0, 0, w, h
+
+    for ch in range(3):
+        # print(f"multiplying ch index {ch}")
+        image_ch = np.expand_dims(image_to_paste[..., ch], axis=-1).astype(dtype)
+        dst_ch = np.expand_dims(dst_image[..., ch], axis=-1).astype(dtype)
+        # dst_ch = np.expand_dims(dst_image[top_left_y:top_left_y+dst_cropped_width, top_left_x:top_left_x+dst_cropped_width, ch], axis=-1).astype(dtype)
+        # print("alpha", alpha.shape, "image", image_ch.shape, "dst", dst_ch.shape, "beta", beta.shape)
+
+        image_alpha = cv2.multiply(image_ch, alpha)
+        dst_beta = cv2.multiply(dst_ch, beta)
+        merged_ch = cv2.add(image_alpha, dst_beta)
+
+        dst_image[..., ch] = merged_ch
+        # dst_image[top_left_y:top_left_y+dst_cropped_width, top_left_x:top_left_x+dst_cropped_width, ch] = merged_ch
+
+    merged_image = np.clip(dst_image, 0, 255, dtype=np.uint8)
+    return merged_image
 
 def adjust_mask_for_image_black_areas_after_rotate(image, mask, order=0, size_factor=1.0):
     # create a mask where the black areas of the image is zeroes along all three channels and the rest are ones
