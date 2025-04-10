@@ -550,7 +550,7 @@ def yolo_segment_image(yolo_model, img, return_original_image=True):
     outputs = yolo_model(img, tracker=False)
     seg_results = []
     for output in outputs:
-        imgg = output.orig_img if return_original_image else None
+        imgg = output.orig_img
         # imgg = cv2.cvtColor(imgg, cv2.COLOR_BGR2RGB)
 
         # debug
