@@ -482,7 +482,10 @@ def yolo8_extract_faces(face_extractor, face_seg_model, inputs, max_faces, conf_
                     seg_mask = (np.ones_like(processed_image) * 255).astype("uint8")
                 else:
                     # seg_mask = extract_xseg_mask(xseg_model=face_seg_model, face_images=[processed_image])[0]
-                    _, seg_mask = yolo_segment_image(img=processed_image, yolo_model=face_seg_model, return_original_image=False)[0]
+                    # resize to seg model input
+                    _processed_image = cv2.resize(processed_image, (320, 320), cv2.INTER_CUBIC)
+                    _, seg_mask = yolo_segment_image(img=_processed_image, yolo_model=face_seg_model, return_original_image=False)[0]
+                    # resize back to 256x256... or not
 
                 cv2.imwrite(f"seg/seg-mask-{idx}.png", seg_mask)
 
