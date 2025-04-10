@@ -12,6 +12,23 @@ from redresser_flux import Redresser, ImageGenerator
 from redresser_utils import RedresserSettings
 
 
+class RedresserSD15V2V(Redresser):
+    def __init__(self, is_server=False, local_files_only=True):
+        super().__init__(is_server, local_files_only, model="sd15-fill")
+        # initialize the sd pipeline
+        self.pipe = SD15PipelineManager(local_files_only=local_files_only)
+        # update settings
+        pipe_settings = {
+            "mode": SD15PipelineManager.USE_ANIMATE_DIFF,  # don't change this
+            "use_LCM": True,  # only used for video pipe
+            "scheduler": "EulerAncestralDiscreteScheduler",  # can change
+            "use_inpaint_control_net": True,  # don't change this
+            "control_net_id": 'openpose'  # don't change this
+        }
+        self.pipe.pipe_settings = pipe_settings
+        self.pipe.set_pipeline()
+
+        self.settings = RedresserSettings()
 class RedresserSD15(Redresser):
 
     def __init__(self, is_server=False, local_files_only=True):

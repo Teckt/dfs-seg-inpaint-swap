@@ -465,7 +465,8 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0"):
             )
             job_order -= 1
     else:
-
+        if r == "sd15-v2v":
+            settings = CogSettings()
         if r == "cog-i2v":
             settings = CogSettings()
         elif r == "wan-480":
@@ -499,7 +500,7 @@ if __name__ == "__main__":
     r = args.r
     is_server = args.is_server
     machine_id = args.machine_id
-    pipe_ids = ("flux", "flux-fill", "sd15", "sd15-fill", "cog-i2v", "wan-480")
+    pipe_ids = ("flux", "flux-fill", "sd15", "sd15-fill", "cog-i2v", "wan-480", "sd15-v2v")
     if r not in pipe_ids:
         raise ValueError("r must be in one of pipe_ids:", pipe_ids)
     print(f"running with {r},is_server={is_server},machine_id={machine_id}")

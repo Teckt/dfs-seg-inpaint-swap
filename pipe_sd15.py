@@ -165,18 +165,18 @@ class SD15PipelineManager:
         else:
             self.pipe = self.get_video_pipe()
 
-        # # determine if using the inpainting control net
-        # control_net_id = self.pipe_settings.get("control_net_id", 'openpose')
-        # if self.pipe_settings.get("use_inpaint_control_net", True):
-        #     # put control nets in list for SD pipeline input
-        #     control_net = self.inpaint_control_net
-        #     # control_net = [
-        #     #     self.inpaint_control_net,
-        #     #     self.get_control_net(control_net_id),
-        #     # ]
-        # else:
-        #     control_net = self.get_control_net(control_net_id)
-        # self.pipe.control_net = control_net
+        # determine if using the inpainting control net
+        control_net_id = self.pipe_settings.get("control_net_id", 'openpose')
+        if self.pipe_settings.get("use_inpaint_control_net", True):
+            # put control nets in list for SD pipeline input
+            control_net = self.inpaint_control_net
+            # control_net = [
+            #     self.inpaint_control_net,
+            #     self.get_control_net(control_net_id),
+            # ]
+        else:
+            control_net = self.get_control_net(control_net_id)
+        self.pipe.control_net = control_net
         self.pipe.scheduler = self.get_scheduler()
         # # pipeline.to('cuda')
         load_textual_inversions(self.pipe)

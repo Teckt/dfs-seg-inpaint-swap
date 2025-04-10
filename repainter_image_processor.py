@@ -20,7 +20,8 @@ class ImageProcessor:
         # builds face detection model from YOLO (PyTorch)
         print("loading face extract model")
         self.face_extract_model = YOLO(hf_hub_download("Anyfusion/xseg", RedresserSettings.face_model_path))
-
+        self.face_mask_model = YOLO(hf_hub_download("Anyfusion/xseg", RedresserSettings.face_mask_model_path))
+        # self.face_mask_model = YOLO(hf_hub_download("Anyfusion/xseg", RedresserSettings.face_model_path))
         self.f_seg_model = None
         self.hand_seg_model = None
         self.head_seg_model = None
@@ -117,7 +118,7 @@ class ImageProcessor:
 
         # face segmentation
         yolo_results = yolo8_extract_faces(
-            face_extractor=self.face_extract_model, face_seg_model=None, max_faces=10,
+            face_extractor=self.face_extract_model, face_seg_model=self.face_mask_model, max_faces=10,
             conf_threshold=0.45, landmarks_padding_ratio=self.settings.options.get("face_mask_scale", 1.1),
             inputs=[frame for _ in batch_frames.items()],
             include_orig_img=False,

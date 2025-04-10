@@ -296,7 +296,15 @@ class Redresser:
                     swapped_image = np.array(image)  # unsharp_mask(extracted_data["aligned_cropped_image"], amount=.5)
                     h, w = swapped_image.shape[:2]
                     seg_mask = np.array(seg_imgs[image_idx])
-                    seg_mask = cv2.blur(seg_mask, (3, 3))
+                    # seg_mask = cv2.blur(seg_mask, (3, 3))
+                    sigma = 5.0
+                    kernel_size = 15
+                    if kernel_size % 2 == 0:
+                        kernel_size += 1  # must be odd for cv2
+
+                    seg_mask = cv2.GaussianBlur(seg_mask, (kernel_size, kernel_size), sigmaX=sigma, sigmaY=sigma)
+
+                    # seg_mask = cv2.GaussianBlur(seg_mask, (0, 0), sigmaX=sigma, sigmaY=sigma)
                     seg_mask = np.clip(seg_mask, 0, 255)
 
                     if seg_mask.shape[-1] > 1:

@@ -9,3 +9,4 @@
 *.env
 *.ppk
 *.pem
+*.pth

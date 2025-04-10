@@ -172,6 +172,7 @@ class RedresserSettings:
 
     # why are these here? FOR CONVENIENCE
     xseg_model_path = "xseg/saved_model"  # local path only
+    face_mask_model_path = "yolov8s-face_mask.pt"
     face_model_path = "yolov8n-face.pt"  # local path only
     face_box_model_path = "face_yolov9c.pt"  # downloads from Bingsu/adetailer
 
@@ -421,6 +422,7 @@ def make_inpaint_condition(image, image_mask, mask_threshold=0.5):
     image = torch.from_numpy(image)
     return image
 
+
 def yolo8_extract_faces(face_extractor, face_seg_model, inputs, max_faces, conf_threshold, landmarks_padding_ratio, include_orig_img=False, face_swapper_input_size=(224, 224)):
     _outputs = face_extractor(inputs, tracker=False)  # frames in rgb, convert to PIL if necessary
     post_processing_secs = time.time()
@@ -479,7 +481,8 @@ def yolo8_extract_faces(face_extractor, face_seg_model, inputs, max_faces, conf_
                 if face_seg_model is None:
                     seg_mask = (np.ones_like(processed_image) * 255).astype("uint8")
                 else:
-                    seg_mask = extract_xseg_mask(xseg_model=face_seg_model, face_images=[processed_image])[0]
+                    # seg_mask = extract_xseg_mask(xseg_model=face_seg_model, face_images=[processed_image])[0]
+                    _, seg_mask = yolo_segment_image(img=processed_image, yolo_model=face_seg_model, return_original_image=False)[0]
 
                 cv2.imwrite(f"seg/seg-mask-{idx}.png", seg_mask)
 
@@ -534,40 +537,51 @@ def yolo8_extract_faces(face_extractor, face_seg_model, inputs, max_faces, conf_
     return batch_extracted_new_params
 
 
-def yolo_segment_image(yolo_model, img):
-        outputs = yolo_model(img, tracker=False)
-        seg_results = []
-        for output in outputs:
-            imgg = output.orig_img
-            # imgg = cv2.cvtColor(imgg, cv2.COLOR_BGR2RGB)
+def yolo_segment_image(yolo_model, img, return_original_image=True):
+    """
+    draws the mask if exists else draw filled-in boxes
+    :param yolo_model:
+    :param img: yolo inputs; can be numpy array or a list of them
+    :return: a list of tuples containing numpy arrays of the original image(or None) and the mask (3 channels) in 0-255
+    """
+    outputs = yolo_model(img, tracker=False)
+    seg_results = []
+    for output in outputs:
+        imgg = output.orig_img if return_original_image else None
+        # imgg = cv2.cvtColor(imgg, cv2.COLOR_BGR2RGB)
 
-            # debug
-            # pred = output.plot()
-            # pred = cv2.cvtColor(pred, cv2.COLOR_BGR2RGB)
-            # pred = Image.fromarray(pred)
-            # pred.show()
+        # debug
+        # pred = output.plot()
+        # pred = cv2.cvtColor(pred, cv2.COLOR_BGR2RGB)
+        # pred = Image.fromarray(pred)
+        # pred.show()
 
-            empty_img = np.zeros_like(imgg)
-            if output.masks is not None:
-                # mask = mask.astype('uint8')  # Convert to int32 for use with cv2 functions
-                # cv2.fillConvexPoly(imgg, [mask], color=(0, 0, 0))  # Black mask
-                for mask_idx, mask in enumerate(output.masks.xy):
-                    conf = output.boxes.conf[mask_idx]
-                    print("mask", mask.shape, "conf", conf)
-                    if conf > 0.2:
-                        mask = mask.astype(np.int32)  # Convert to int32 for use with cv2 functions
-                        cv2.fillPoly(empty_img, [mask], color=(255, 255, 255))  # white mask over black
-            elif output.boxes is not None:
-                boxes = output.boxes.xyxy.cpu().numpy()  # Convert tensor to NumPy array if needed
+        empty_img = np.zeros_like(imgg)
+        if output.masks is not None:
+            # mask = mask.astype('uint8')  # Convert to int32 for use with cv2 functions
+            # cv2.fillConvexPoly(imgg, [mask], color=(0, 0, 0))  # Black mask
+            for mask_idx, mask in enumerate(output.masks.xy):
+                conf = output.boxes.conf[mask_idx]
+                print("mask", mask.shape, "conf", conf)
+                if conf > 0.2:
+                    mask = mask.astype(np.int32)  # Convert to int32 for use with cv2 functions
+                    cv2.fillPoly(empty_img, [mask], color=(255, 255, 255))  # white mask over black
+        elif output.boxes is not None:
+            boxes = output.boxes.xyxy.cpu().numpy()  # Convert tensor to NumPy array if needed
 
-                # Loop over each detected box and draw a white rectangle on the mask
-                for box in boxes:
-                    x1, y1, x2, y2 = map(int, box)  # Convert to integers for drawing
-                    cv2.rectangle(empty_img, (x1, y1), (x2, y2), color=(255, 255, 255), thickness=-1)
+            # Loop over each detected box and draw a white rectangle on the mask
+            for box in boxes:
+                x1, y1, x2, y2 = map(int, box)  # Convert to integers for drawing
+                cv2.rectangle(empty_img, (x1, y1), (x2, y2), color=(255, 255, 255), thickness=-1)
 
-            seg_results.append([Image.fromarray(imgg), Image.fromarray(empty_img)])
+        seg_results.append(
+            [
+                Image.fromarray(imgg) if return_original_image else None,
+                Image.fromarray(empty_img)
+            ]
+        )
 
-        return seg_results
+    return seg_results
 
 
 def load_image(image_path, return_type="pil"):
