@@ -487,7 +487,7 @@ def yolo8_extract_faces(face_extractor, face_seg_model, inputs, max_faces, conf_
                     _, seg_mask = yolo_segment_image(img=_processed_image, yolo_model=face_seg_model, return_original_image=False)[0]
                     # resize back to 256x256... or not
 
-                cv2.imwrite(f"seg/seg-mask-{idx}.png", seg_mask)
+                seg_mask.save(f"seg/seg-mask-{idx}.png")
 
                 batch_extracted_new_params[out_idx][idx] = {
                     "aligned_cropped_image": aligned_cropped_image,
