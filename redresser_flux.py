@@ -297,7 +297,7 @@ class Redresser:
                     h, w = swapped_image.shape[:2]
                     seg_mask = np.array(seg_imgs[image_idx])
                     # seg_mask = cv2.blur(seg_mask, (3, 3))
-                    sigma = 7
+                    sigma = 5
                     kernel_size = 20
                     if kernel_size % 2 == 0:
                         kernel_size += 1  # must be odd for cv2
