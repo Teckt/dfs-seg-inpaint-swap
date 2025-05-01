@@ -33,9 +33,9 @@ def run(active_time, estimated_time_per_job):
     active_servers, free_servers = get_active_servers(active_time=active_time)
 
     # get all active and queued jobs
-    active_jobs = FirestoreFunctions.repaintImageJobsRef.where(
-        filter=FieldFilter("jobStatus", "==", "active")) \
-        .order_by(u'queuedTime', direction=firestore.firestore.Query.ASCENDING).get()
+    # active_jobs = FirestoreFunctions.repaintImageJobsRef.where(
+    #     filter=FieldFilter("jobStatus", "==", "active")) \
+    #     .order_by(u'queuedTime', direction=firestore.firestore.Query.ASCENDING).get()
 
     queued_jobs = FirestoreFunctions.repaintImageJobsRef.where(
         filter=FieldFilter("jobStatus", "==", "queued")) \
@@ -47,6 +47,9 @@ def run(active_time, estimated_time_per_job):
     estimated_time_per_job_per_server = estimated_time_per_job / max(len(active_servers), 1)
 
     for index, queued_job in enumerate(queued_jobs):
+        # steps = int(queued_job.get("steps"))
+        # overhead_secs = 2 + 2
+
         # this ensures we minus time according to active servers
         if index == 0:
             estimated_time = estimated_time_per_job
@@ -57,6 +60,7 @@ def run(active_time, estimated_time_per_job):
                 (index*estimated_time_per_job_per_server) -
                 (len(free_servers)*estimated_time_per_job_per_server)
             )
+
         data = {
             "jobId": queued_job.id,
             "estimatedSeconds": estimated_time
@@ -91,6 +95,6 @@ def test_utc_time():
 if __name__ == "__main__":
 
     while True:
-        run(active_time=100, estimated_time_per_job=40)
+        run(active_time=100, estimated_time_per_job=60)
         print("sleeping 5...")
         time.sleep(5)

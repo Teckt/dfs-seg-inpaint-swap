@@ -8,7 +8,7 @@ import torch
 from pipe_sd15 import SD15PipelineManager
 
 
-from redresser_flux import Redresser, ImageGenerator
+from redresser_flux import Redresser
 from redresser_utils import RedresserSettings
 
 
@@ -126,7 +126,8 @@ class RedresserSD15(Redresser):
             # image.save(f"{time_id}_{str(image_idx).zfill(5)}.png")
 
 
-class ImageGeneratorSD15(ImageGenerator):
+class ImageGeneratorSD15():
+# class ImageGeneratorSD15(ImageGenerator):
     def __init__(self, is_server=False, local_files_only=True):
         super().__init__(is_server, local_files_only, model="sd15")
         '''

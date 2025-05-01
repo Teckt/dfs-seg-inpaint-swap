@@ -201,17 +201,34 @@ class RedresserSettings:
         # "face_mask_scale": 1.0,
         # "use_faceswap": False,
         "runs": 1,  # how many times to run with these settings
+        "mode": 0,  # 0 for t2i, 1 for fill
     }
 
     def __init__(self, ):
         self.options = {}
         self.previous_options = self.__class__.default_options.copy()
 
-    def map_dfs_options(self, dfs_options, model):
+    def insert_nsfw_loras(self):
+        nsfw_words = ["sex", "naked", "nude", "pussy", "cock", "vagina", "penis", "fuck", "nsfw", "titty", "titties"]
+        for word in nsfw_words:
+            if word in self.options["prompt"]:
+                alpha = random.uniform(0.125, 0.6)
+                if random.uniform(0, 1) >= 0.5:
+                    if "<NSFW_master" not in self.options["prompt"]:
+                        self.options["prompt"] += f"<NSFW_master:{alpha}>"
+                else:
+                    if "<pussy" not in self.options["prompt"]:
+                        self.options["prompt"] += f"<pussy:{alpha}>"
+                break
+
+    def map_dfs_options(self, dfs_options, mode, insert_loras=False):
 
         self.options["prompt"] = dfs_options.get("prompt", "")
+        self.options["mode"] = mode
+        if insert_loras:
+            self.insert_nsfw_loras()
 
-        if model == "fill":
+        if mode == 1:  # fill
             print("setting guidance_scale to 10x for repainter")
             self.options["guidance_scale"] = dfs_options.get("cfg", 3.0) * 10
 

@@ -436,7 +436,7 @@ class FirestoreFunctions:
                         print("error, trying again in 5")
                         time.sleep(5)
 
-    def get_jobs(self, job_type, resolutions=(128, 224, 256), repaint_mode=0):
+    def get_jobs(self, job_type, resolutions=(128, 224, 256), repaint_mode=0, repaint_hyper_mode=False):
         ref = self.get_job_ref(job_type)
         if ref is None:
             return None
@@ -452,7 +452,7 @@ class FirestoreFunctions:
 
         for job in jobs:
             user_id = str(job.get("userId"))
-            print(f"user_id:{user_id}, job_id={job.id}")
+
             # if user_id in [
             #     "IgN7nUZ84fMkvrVPK1A2VjzE5Ge2",
             #
@@ -463,6 +463,17 @@ class FirestoreFunctions:
                 machine_id = str(job.get("machine_id"))
             except KeyError:
                 machine_id = ""
+            try:
+                use_hyper = bool(job.get("useHyper"))
+            except KeyError:
+                use_hyper = True
+            print(f"user_id:{user_id}, job_id={job.id}, use_hyper={use_hyper}, machine_id={machine_id}")
+            if use_hyper and repaint_hyper_mode:
+                pass
+            elif not use_hyper and not repaint_hyper_mode:
+                pass
+            else:
+                continue
 
             if machine_id == "":
                 return job

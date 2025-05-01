@@ -1,8 +1,56 @@
 import time
 import numpy as np
 import cv2
-import torch
-# from keras.utils import array_to_img
+
+
+def fit_to_size(image, target_size, gt_boxes=None, dtype=np.float32, norm=True, num_landmarks=10):
+    ih, iw = target_size # output = 416x416
+    h, w, _ = image.shape
+
+    # print("image", image.shape)
+
+    scale = min(iw / w, ih / h)
+    nw, nh = int(scale * w), int(scale * h)
+
+    if h * w > ih * iw:
+        image_resized = cv2.resize(image, (nw, nh), interpolation=cv2.INTER_AREA)
+    else:
+        image_resized = cv2.resize(image, (nw, nh), interpolation=cv2.INTER_CUBIC)
+
+
+    # image_resized = cv2.resize(image, (nw, nh))
+
+    image_padded = np.full(shape=[ih, iw, 3], fill_value=128.0, dtype=dtype)
+    dw, dh = (iw - nw) // 2, (ih - nh) // 2
+    image_padded[dh:nh + dh, dw:nw + dw, :] = image_resized
+
+    if norm:
+        image_padded = image_padded / 255.
+
+    # print(f"scale={scale}, dw={dw}, dh={dh}")
+
+    if gt_boxes is None:
+        return image_padded
+
+    else:
+        if num_landmarks == 10:
+            gt_boxes[:, [0, 2, 4, 6, 8, 10, 12]] = gt_boxes[:, [0, 2, 4, 6, 8, 10, 12]] * scale + dw
+            gt_boxes[:, [1, 3, 5, 7, 9, 11, 13]] = gt_boxes[:, [1, 3, 5, 7, 9, 11, 13]] * scale + dh
+            gt_boxes[:, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]] = np.clip(
+                gt_boxes[:, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]], 0., target_size[0]).astype(dtype=dtype)
+        else:
+            for box in gt_boxes:
+                box[0] = np.clip(box[0] * scale + dw, 0, target_size[0]).astype(dtype=dtype)
+                box[1] = np.clip(box[1] * scale + dh, 0, target_size[0]).astype(dtype=dtype)
+                box[2] = np.clip(box[2] * scale + dw, 0, target_size[0]).astype(dtype=dtype)
+                box[3] = np.clip(box[3] * scale + dh, 0, target_size[0]).astype(dtype=dtype)
+
+
+
+                    # gt_boxes[:, [0, 2]] = gt_boxes[:, [0, 2]] * scale + dw
+                    # gt_boxes[:, [1, 3]] = gt_boxes[:, [1, 3]] * scale + dh
+
+        return image_padded, gt_boxes
 
 
 def image_stats(image):
@@ -142,7 +190,7 @@ def paste_swapped_image(dst_image, swapped_image, seg_mask, aligned_cropped_para
     h, w = dst_image.shape[:2]
     # pad the image
     dst_image, dst_landmarks, dst_pad_size = pad_image(dst_image, aligned_cropped_params["original_landmarks"])
-    half_pad_size = int(dst_pad_size / 2)
+    half_pad_size = int(dst_pad_size / 4)
     # print(f"pad image={time.time()-secs} secs")
     # rotate and resize the image
     secs = time.time()
@@ -157,6 +205,8 @@ def paste_swapped_image(dst_image, swapped_image, seg_mask, aligned_cropped_para
     if not resize:
         rotated_blank_mask = rotated_landmarks
     # print(f"rotate image={time.time() - secs} secs")
+
+    rotated_image, og_rotated_landmarks, pad_image_custom_size(rotated_image, og_rotated_landmarks, half_pad_size*2)
 
     # get the center that we cropped from for seamless close
     rotated_center = og_rotated_landmarks[-1]
@@ -177,12 +227,12 @@ def paste_swapped_image(dst_image, swapped_image, seg_mask, aligned_cropped_para
     if blur_mask:
         # secs = time.time()
         # sigma = int(mask.shape[0] * 0.03) * 2 + 1
-        # mask = cv2.GaussianBlur(mask, (0, 0), sigmaX=sigma, sigmaY=sigma)
-        mask = gradient_blur_mask(mask)
+        # mask = cv2.GaussianBlur(mask, (21, 21), sigmaX=21, sigmaY=21)
+        # mask = gradient_blur_mask(mask)
+    # # else:
+    # #     mask = cv2.blur(mask, (16, 16))
     # else:
-    #     mask = cv2.blur(mask, (16, 16))
-    else:
-        mask = cv2.blur(mask, (3, 3))
+        mask = cv2.blur(mask, (15, 15))
 
     # make sure the mask has channels(3rd) dimension
     if len(mask.shape) == 2:
@@ -200,15 +250,15 @@ def paste_swapped_image(dst_image, swapped_image, seg_mask, aligned_cropped_para
     #     f"C:/Users/teckt/PycharmProjects/iae_dfstudio/dfs_face_extractor/preds/seg_mask-{queue_index}-{image_index}-{face_index}.jpg",
     #     "JPEG")
     if seamless_clone:
-        # mask = np.ones_like(mask).astype(np.uint8)*255
+        mask = np.ones_like(mask).astype(np.uint8)*255
 
         # make mask non-zero for seamless clone
         if not resize:
             mask = cv2.resize(mask, (dst_cropped_width, dst_cropped_width),
-                       interpolation=cv2.INTER_LANCZOS4)
+                       interpolation=cv2.INTER_CUBIC)
             image = cv2.resize(image, (dst_cropped_width, dst_cropped_width),
-                       interpolation=cv2.INTER_LANCZOS4)
-        mask = np.clip(mask + 1, 0, 255).astype(np.uint8)
+                       interpolation=cv2.INTER_CUBIC)
+        # mask = np.clip(mask + 1, 0, 255).astype(np.uint8)
 
         # mask = np.ones_like(image).astype(np.uint8) * 255
         # mask = cv2.GaussianBlur(mask, (0, 0), sigmaX=16, sigmaY=16)
@@ -555,11 +605,11 @@ def pad_image(image, landmarks):
     # pad_size = max_side/2
     # make sure the pad size is divisible by 2
     pad_size = int(pad_size if pad_size % 2 == 0 else pad_size + 1)
-    half_pad_size = int(pad_size / 2)
+    half_pad_size = int(pad_size / 4)
     # print("shape", image.shape, "max_side", max_side, "pad_size", pad_size)
 
     padded_black_background = np.zeros(shape=(max_side+(half_pad_size*2), max_side+(half_pad_size*2), image.shape[2]), dtype=np.uint8)
-    padded_black_background += 127
+    # padded_black_background += 127
     # paste image to background
     # padded_image = array_to_img(padded_black_background).convert('RGBA')
 
@@ -579,6 +629,26 @@ def pad_image(image, landmarks):
     # padded_image = img_to_array(padded_image)
     return padded_black_background, padded_landmarks, pad_size
 
+
+def pad_image_custom_size(image, landmarks, pad_size):
+    h, w = image.shape[:2]
+    max_side = max(h, w)
+
+    # make sure the pad size is divisible by 2
+    pad_size = int(pad_size if pad_size % 2 == 0 else pad_size + 1)
+    half_pad_size = int(pad_size / 2)
+
+    padded_black_background = np.zeros(shape=(max_side+(half_pad_size*2), max_side+(half_pad_size*2), image.shape[2]), dtype=np.uint8)
+
+    # Paste the image onto the background
+    padded_black_background[half_pad_size:half_pad_size + h, half_pad_size:half_pad_size + w] = image
+
+    # adjust landmarks by adding half pad size to each landmark
+    padded_landmarks = []
+    for (x, y) in landmarks:
+        padded_landmarks.append([x+half_pad_size, y+half_pad_size])
+
+    return padded_black_background, padded_landmarks, pad_size
 
 def gradient_blur_mask(mask):
     padding = mask.shape[0]//2
@@ -604,7 +674,7 @@ def gradient_blur_mask(mask):
     # Apply Gaussian blur to the padded mask following the same value used for kernel size in erosion
 
     sigma = int(image_size * 0.01) * 2 + 1
-    blurred_mask = cv2.GaussianBlur(padded_mask, (0, 0), sigmaX=sigma, sigmaY=sigma)
+    blurred_mask = cv2.GaussianBlur(padded_mask, (5, 5), sigmaX=sigma, sigmaY=sigma)
 
     # Crop the blurred mask to remove the padding
     # blurred_mask = blurred_mask[padding:-padding, padding:-padding]
@@ -630,7 +700,7 @@ def gradient_blur_mask(mask):
     initial_image[-gradient_width:, :] = 0
     initial_image[:, :gradient_width_h] = 0
     initial_image[:, -gradient_width_h:] = 0
-    initial_image = cv2.GaussianBlur(initial_image, (0, 0), sigmaX=gradient_width, sigmaY=gradient_width_h)
+    initial_image = cv2.GaussianBlur(initial_image, (5, 5), sigmaX=gradient_width, sigmaY=gradient_width_h)
     initial_image = np.clip(initial_image / 255., 0., 1.)
 
     blurred_mask = np.clip(blurred_mask * initial_image, 0, 255).astype(np.uint8)

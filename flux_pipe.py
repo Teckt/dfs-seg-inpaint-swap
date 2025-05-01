@@ -30,16 +30,14 @@ from fire_functions import FirestoreFunctions
 
 class MyFluxPipe:
 
-    def __init__(self, fill=True, ):
+    def __init__(self, fill=True, use_hyper=False):
         self.fire_functions = FirestoreFunctions()
 
         self.dtype = torch.bfloat16
         self.lora_path = LORA_PATH
-
-        if fill:
-            self.flux_model_name = FLUX_FILL_CUSTOM_PATH if USE_CUSTOM_FLUX_FILL else FLUX_FILL_PATH
-        else:
-            self.flux_model_name = FLUX_CUSTOM_PATH if USE_CUSTOM_FLUX else FLUX_PATH
+        self.is_fill = fill
+        self.use_hyper = use_hyper
+        self.flux_model_name = self.get_flux_model_name()
 
         # load VAE
         # with tqdm(range(1), "Loading flux_vae"):
@@ -51,7 +49,7 @@ class MyFluxPipe:
         #     # self.flux_vae.to(self.dtype)
 
         self.fused_turbo = False
-        self.is_fill = fill
+
 
         self.pipes = {"t2i":None, "fill":None}
 
@@ -102,19 +100,23 @@ class MyFluxPipe:
         print("adding t5 encoder")
         self.pipe.text_encoder_2 = self.text_encoder_2
 
-        # fuse lora before quantizing
-        if FUSE_HYPER_LORA:
-            self.fuse_hyper_lora()
-        # quantize if original flux models
-        if not USE_BNB and USE_OPTIMUM_QUANTO and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
-            self.quanto_quantize()
 
-        if SAVE_MODEL and not os.path.exists(
-                f"{SAVE_MODEL_PATH}/diffusion_pytorch_model.safetensors"):
-            # save the model here
-            with tqdm(range(1), "Saving transformer"):
-                print(f"saving transformer to {SAVE_MODEL_PATH}")
-                transformer.save_pretrained(SAVE_MODEL_PATH, max_shard_size=SHARD_SIZE)
+        ### DEBUG ONLY ###
+        # # fuse lora before quantizing
+        # if FUSE_HYPER_LORA:
+        #     self.fuse_hyper_lora()
+        # # quantize if original flux models
+        # if not USE_BNB and USE_OPTIMUM_QUANTO and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
+        #     self.quanto_quantize()
+        #
+        # if SAVE_MODEL and not os.path.exists(
+        #         f"{SAVE_MODEL_PATH}/diffusion_pytorch_model.safetensors"):
+        #     # save the model here
+        #     with tqdm(range(1), "Saving transformer"):
+        #         print(f"saving transformer to {SAVE_MODEL_PATH}")
+        #         transformer.save_pretrained(SAVE_MODEL_PATH, max_shard_size=SHARD_SIZE)
+        ### DEBUG ONLY ###
+
 
         self.pipe.vae.enable_slicing()
         # self.pipe.vae.enable_tiling()
@@ -130,26 +132,53 @@ class MyFluxPipe:
             VRAM = 0
             print("CUDA is not available.")
 
-        if USE_OPTIMUM_QUANTO:
-            if USE_CPU_OFFLOAD:
-                self.pipe.enable_model_cpu_offload()
-            elif USE_SEQUENTIAL_CPU_OFFLOAD:
-                self.pipe.enable_sequential_cpu_offload()
-            else:
-                self.pipe.to("cuda")
-        # move to cuda if original flux models only
-        elif USE_BNB and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
-            self.pipe.to("cuda")
-            # self.pipe.enable_model_cpu_offload()
+
+        ### DEBUG ONLY ###
+        # if USE_OPTIMUM_QUANTO:
+        #     if USE_CPU_OFFLOAD:
+        #         self.pipe.enable_model_cpu_offload()
+        #     elif USE_SEQUENTIAL_CPU_OFFLOAD:
+        #         self.pipe.enable_sequential_cpu_offload()
+        #     else:
+        #         self.pipe.to("cuda")
+        # # move to cuda if original flux models only
+        # elif USE_BNB and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
+        #     self.pipe.to("cuda")
+        #     # self.pipe.enable_model_cpu_offload()
+        # else:
+        #     if USE_CPU_OFFLOAD:
+        #         self.pipe.enable_model_cpu_offload()
+        #     elif USE_SEQUENTIAL_CPU_OFFLOAD:
+        #         self.pipe.enable_sequential_cpu_offload()
+        #     else:
+        #         self.pipe.to("cuda")
+        ### DEBUG ONLY ###
+
+        if USE_CPU_OFFLOAD:
+            self.pipe.enable_model_cpu_offload()
+        elif USE_SEQUENTIAL_CPU_OFFLOAD:
+            self.pipe.enable_sequential_cpu_offload()
         else:
-            if USE_CPU_OFFLOAD:
-                self.pipe.enable_model_cpu_offload()
-            elif USE_SEQUENTIAL_CPU_OFFLOAD:
-                self.pipe.enable_sequential_cpu_offload()
+            self.pipe.to("cuda")
+
+    def get_flux_model_name(self):
+        """
+        gets the model path for huggingface flux model or custom flux/hyper models
+        :return:
+        """
+        if self.is_fill:
+            if self.use_hyper:
+                return FLUX_FILL_HYPER_CUSTOM_PATH if USE_CUSTOM_FLUX_FILL else FLUX_FILL_PATH
             else:
-                self.pipe.to("cuda")
+                return FLUX_FILL_CUSTOM_PATH if USE_CUSTOM_FLUX_FILL else FLUX_FILL_PATH
+        else:
+            if self.use_hyper:
+                return FLUX_HYPER_CUSTOM_PATH if USE_CUSTOM_FLUX else FLUX_PATH
+            else:
+                return FLUX_CUSTOM_PATH if USE_CUSTOM_FLUX else FLUX_PATH
 
     def switch_pipeline(self, pipe):
+        assert pipe == "fill" or pipe == "t2i"
         if pipe == "fill":
             if self.is_fill:
                 print("Already is fill")
@@ -167,10 +196,7 @@ class MyFluxPipe:
 
     def switch_pipe(self, fill):
         self.is_fill = fill
-        if fill:
-            self.flux_model_name = FLUX_FILL_CUSTOM_PATH if USE_CUSTOM_FLUX_FILL else FLUX_FILL_PATH
-        else:
-            self.flux_model_name = FLUX_CUSTOM_PATH if USE_CUSTOM_FLUX else FLUX_PATH
+        self.flux_model_name = self.get_flux_model_name()
 
         if torch.cuda.is_available():
             device = torch.device("cuda")
@@ -184,24 +210,30 @@ class MyFluxPipe:
         # just set pipe if already loaded empty
         if fill:
             if self.pipes["fill"] is not None:
-                print("moving t2i transformer to cpu")
-                self.pipes["t2i"].transformer.to("cpu")
-                current_memory = torch.cuda.memory_allocated(device) / (1024 ** 3)  # Convert to GB
-                max_memory = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
-                print(f"GPU memory allocated: {current_memory:.2f}/{max_memory:.2f} GB")
-                print("moving fill transformer to cuda")
-                self.pipes["fill"].transformer.to("cuda")
-                current_memory = torch.cuda.memory_allocated(device) / (1024 ** 3)  # Convert to GB
-                max_memory = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
-                print(f"GPU memory allocated: {current_memory:.2f}/{max_memory:.2f} GB")
-                self.pipe = self.pipes["fill"]
+                if USE_CPU_OFFLOAD or USE_SEQUENTIAL_CPU_OFFLOAD:
+                    self.pipe = self.pipes["fill"]
+                else:
+                    print("moving t2i transformer to cpu")
+                    self.pipes["t2i"].transformer.to("cpu")
+                    current_memory = torch.cuda.memory_allocated(device) / (1024 ** 3)  # Convert to GB
+                    max_memory = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
+                    print(f"GPU memory allocated: {current_memory:.2f}/{max_memory:.2f} GB")
+                    print("moving fill transformer to cuda")
+                    self.pipes["fill"].transformer.to("cuda")
+                    current_memory = torch.cuda.memory_allocated(device) / (1024 ** 3)  # Convert to GB
+                    max_memory = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
+                    print(f"GPU memory allocated: {current_memory:.2f}/{max_memory:.2f} GB")
+                    self.pipe = self.pipes["fill"]
                 print(f"switched pipe to fill")
                 return
         else:
             if self.pipes["t2i"] is not None:
-                self.pipe.transformer.to("cpu")
-                self.pipe = self.pipes["t2i"]
-                self.pipe.transformer.to("cuda")
+                if USE_CPU_OFFLOAD or USE_SEQUENTIAL_CPU_OFFLOAD:
+                    self.pipe = self.pipes["t2i"]
+                else:
+                    self.pipe.transformer.to("cpu")
+                    self.pipe = self.pipes["t2i"]
+                    self.pipe.transformer.to("cuda")
                 print(f"switched pipe to t2i")
                 return
 
@@ -216,25 +248,36 @@ class MyFluxPipe:
             "local_files_only": USE_LOCAL_FILES
         }
 
-        # unload to cpu here
-        if USE_OPTIMUM_QUANTO:
-            if USE_CPU_OFFLOAD:
-                self.pipe.disable_model_cpu_offload()
-            elif USE_SEQUENTIAL_CPU_OFFLOAD:
-                self.pipe.disable_sequential_cpu_offload()
-            else:
-                self.pipe.transformer.to("cpu")
-        # move to cpu if original flux models only
-        elif USE_BNB and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
-            self.pipe.transformer.to("cpu")
-            # self.pipe.enable_model_cpu_offload()
+        ### DEBUG ONLY ###
+        # # unload to cpu here
+        # if USE_OPTIMUM_QUANTO:
+        #     if USE_CPU_OFFLOAD:
+        #         # self.pipe.disable_model_cpu_offload()
+        #         pass
+        #     elif USE_SEQUENTIAL_CPU_OFFLOAD:
+        #         # self.pipe.disable_sequential_cpu_offload()
+        #         pass
+        #     else:
+        #         self.pipe.transformer.to("cpu")
+        # # move to cpu if original flux models only
+        # elif USE_BNB and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
+        #     self.pipe.transformer.to("cpu")
+        #     # self.pipe.enable_model_cpu_offload()
+        # else:
+        #     if USE_CPU_OFFLOAD:
+        #         # self.pipe.disable_model_cpu_offload()
+        #         pass
+        #     elif USE_SEQUENTIAL_CPU_OFFLOAD:
+        #         # self.pipe.disable_sequential_cpu_offload()
+        #         pass
+        #     else:
+        #         self.pipe.transformer.to("cpu")
+        ### DEBUG ONLY ###
+
+        if USE_CPU_OFFLOAD or USE_SEQUENTIAL_CPU_OFFLOAD:
+            pass
         else:
-            if USE_CPU_OFFLOAD:
-                self.pipe.disable_model_cpu_offload()
-            elif USE_SEQUENTIAL_CPU_OFFLOAD:
-                self.pipe.disable_sequential_cpu_offload()
-            else:
-                self.pipe.transformer.to("cpu")
+            self.pipe.transformer.to("cpu")
 
         transformer = self.load_transformer()
         print("switching pipeline")
@@ -249,59 +292,69 @@ class MyFluxPipe:
         print("adding transformer")
         self.pipe.transformer = transformer
 
-        if USE_OPTIMUM_QUANTO:
-            if USE_CPU_OFFLOAD:
-                self.pipe.enable_model_cpu_offload()
-            elif USE_SEQUENTIAL_CPU_OFFLOAD:
-                self.pipe.enable_sequential_cpu_offload()
-            else:
-                self.pipe.transformer.to("cuda")
-        # move to cuda if original flux models only
-        elif USE_BNB and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
-            self.pipe.transformer.to("cuda")
-            # self.pipe.enable_model_cpu_offload()
+        ### DEBUG ONLY ###
+        # if USE_OPTIMUM_QUANTO:
+        #     if USE_CPU_OFFLOAD:
+        #         self.pipe.enable_model_cpu_offload()
+        #     elif USE_SEQUENTIAL_CPU_OFFLOAD:
+        #         self.pipe.enable_sequential_cpu_offload()
+        #     else:
+        #         self.pipe.transformer.to("cuda")
+        # # move to cuda if original flux models only
+        # elif USE_BNB and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
+        #     self.pipe.transformer.to("cuda")
+        #     # self.pipe.enable_model_cpu_offload()
+        # else:
+        #     if USE_CPU_OFFLOAD:
+        #         self.pipe.enable_model_cpu_offload()
+        #     elif USE_SEQUENTIAL_CPU_OFFLOAD:
+        #         self.pipe.enable_sequential_cpu_offload()
+        #     else:
+        #         self.pipe.transformer.to("cuda")
+        ### DEBUG ONLY ###
+
+
+        if USE_CPU_OFFLOAD:
+            self.pipe.enable_model_cpu_offload()
+        elif USE_SEQUENTIAL_CPU_OFFLOAD:
+            self.pipe.enable_sequential_cpu_offload()
         else:
-            if USE_CPU_OFFLOAD:
-                self.pipe.enable_model_cpu_offload()
-            elif USE_SEQUENTIAL_CPU_OFFLOAD:
-                self.pipe.enable_sequential_cpu_offload()
-            else:
-                self.pipe.transformer.to("cuda")
+            self.pipe.transformer.to("cuda")
         print(f"switched pipe to {'fill' if fill else 't2i'}")
 
-    def fuse_hyper_lora(self):
-        # control_pipe = FluxControlPipeline.from_pretrained("black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16)
-        # control_pipe.load_lora_weights("black-forest-labs/FLUX.1-Depth-dev-lora", adapter_name="depth")
-
-        if self.fused_turbo:
-            print("turbo already fused")
-            return
-        with tqdm(range(4), desc="Fusing hyper lora") as p:
-            if "turbo" in FUSE_HYPER_LORA_REPO.lower():
-                self.pipe.load_lora_weights(self.lora_path,
-                                            weight_name="turbo-a.safetensors",
-                                            adapter_name="turbo")
-            else:
-                self.pipe.load_lora_weights(
-                    hf_hub_download(FUSE_HYPER_LORA_REPO, FUSE_HYPER_LORA_MODEL_FILE),
-                    adapter_name="turbo"
-                )
-
-            p.update()
-            p.desc = "Setting adapter"
-            self.pipe.set_adapters(["turbo"], adapter_weights=[FUSE_HYPER_ALPHA])
-
-            p.update()
-            p.desc = "Fusing lora"
-            self.pipe.fuse_lora()
-            p.update()
-            p.desc = "Unloading lora"
-            self.pipe.unload_lora_weights()
-            p.desc = "Deleting adapter"
-            # self.pipe.delete_adapters(["hyper-sd"])
-            self.pipe.delete_adapters(["turbo"])
-            p.update()
-        self.fused_turbo = True
+    # def fuse_hyper_lora(self):
+    #     # control_pipe = FluxControlPipeline.from_pretrained("black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16)
+    #     # control_pipe.load_lora_weights("black-forest-labs/FLUX.1-Depth-dev-lora", adapter_name="depth")
+    #
+    #     if self.fused_turbo:
+    #         print("turbo already fused")
+    #         return
+    #     with tqdm(range(4), desc="Fusing hyper lora") as p:
+    #         if "turbo" in FUSE_HYPER_LORA_REPO.lower():
+    #             self.pipe.load_lora_weights(self.lora_path,
+    #                                         weight_name="turbo-a.safetensors",
+    #                                         adapter_name="turbo")
+    #         else:
+    #             self.pipe.load_lora_weights(
+    #                 hf_hub_download(FUSE_HYPER_LORA_REPO, FUSE_HYPER_LORA_MODEL_FILE),
+    #                 adapter_name="turbo"
+    #             )
+    #
+    #         p.update()
+    #         p.desc = "Setting adapter"
+    #         self.pipe.set_adapters(["turbo"], adapter_weights=[FUSE_HYPER_ALPHA])
+    #
+    #         p.update()
+    #         p.desc = "Fusing lora"
+    #         self.pipe.fuse_lora()
+    #         p.update()
+    #         p.desc = "Unloading lora"
+    #         self.pipe.unload_lora_weights()
+    #         p.desc = "Deleting adapter"
+    #         # self.pipe.delete_adapters(["hyper-sd"])
+    #         self.pipe.delete_adapters(["turbo"])
+    #         p.update()
+    #     self.fused_turbo = True
 
     def load_transformer(self):
         transformer_args = {
@@ -331,34 +384,34 @@ class MyFluxPipe:
                     self.flux_model_name, subfolder="transformer", **transformer_args)
         return transformer
 
-    def quanto_quantize(self):
-        # load and quantize transformer
-        with tqdm(range(2), "Quantizing transformer") as progress_bar:
-
-            # progress_bar.update()
-            # progress_bar.set_description(f"quantizing flux_transformer to qfloat8")
-
-            # if not fill:
-
-            quantize(self.pipe.transformer, weights=qfloat8)
-            progress_bar.update()
-            progress_bar.set_description(f"freezing flux_transformer")
-            # if not fill:
-            freeze(self.pipe.transformer)
-            progress_bar.update()
-
-        # # load and quantize t5
-        # with tqdm(total=3, desc="loading text_encoder_2") as progress_bar:
-        #
-        #     progress_bar.update()
-        #     # progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
-        #     # if not fill:
-        #     #     quantize(self.text_encoder_2, weights=qfloat8)
-        #     progress_bar.update()
-        #     # progress_bar.set_description("freezing text_encoder_2")
-        #     # if not fill:
-        #     #     freeze(self.text_encoder_2)
-        #     progress_bar.update()
+    # def quanto_quantize(self):
+    #     # load and quantize transformer
+    #     with tqdm(range(2), "Quantizing transformer") as progress_bar:
+    #
+    #         # progress_bar.update()
+    #         # progress_bar.set_description(f"quantizing flux_transformer to qfloat8")
+    #
+    #         # if not fill:
+    #
+    #         quantize(self.pipe.transformer, weights=qfloat8)
+    #         progress_bar.update()
+    #         progress_bar.set_description(f"freezing flux_transformer")
+    #         # if not fill:
+    #         freeze(self.pipe.transformer)
+    #         progress_bar.update()
+    #
+    #     # # load and quantize t5
+    #     # with tqdm(total=3, desc="loading text_encoder_2") as progress_bar:
+    #     #
+    #     #     progress_bar.update()
+    #     #     # progress_bar.set_description("quantizing text_encoder_2 to qfloat8")
+    #     #     # if not fill:
+    #     #     #     quantize(self.text_encoder_2, weights=qfloat8)
+    #     #     progress_bar.update()
+    #     #     # progress_bar.set_description("freezing text_encoder_2")
+    #     #     # if not fill:
+    #     #     #     freeze(self.text_encoder_2)
+    #     #     progress_bar.update()
 
     def apply_flux_loras_with_prompt(self, prompt, use_turbo=False):
         # use_turbo = False

@@ -395,11 +395,17 @@ def load_image(image_path):
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", "--socket_port", default="5000")
+    args = parser.parse_args()
+    socket_port = int(args.socket_port)
 
     pipe_ids = ("flux", "flux-fill", "sd15", "sd15-fill")
 
-    im_servers = [SocketServer(5000+i) for i in range(len(pipe_ids))]
-    pipe_clients = [SocketClient(5100+i) for i in range(len(pipe_ids))]
+    im_servers = [SocketServer(socket_port+i) for i in range(len(pipe_ids))]
+    pipe_clients = [SocketClient(socket_port+100+i) for i in range(len(pipe_ids))]
 
     image_processor = ImageProcessor()
 
@@ -408,7 +414,7 @@ if __name__ == "__main__":
             # get the inputs
             print(f"\r{int(time.time())}-[{pipe_idx}] waiting from port {im_server.port}...", end="")
             try:
-                settings = im_server.get(blocking=False)
+                job_id, settings = im_server.get(blocking=False)
             except BlockingIOError:
                 time.sleep(1)
                 continue
@@ -426,7 +432,7 @@ if __name__ == "__main__":
                     settings.options["max_side"],
                     settings.options["center_crop"])
 
-                pipe_clients[pipe_idx].put(outputs)
+                pipe_clients[pipe_idx].put((job_id, outputs))
             # process the directory
             else:
                 image_dir = settings.options['image']
@@ -442,7 +448,7 @@ if __name__ == "__main__":
                             settings.options["center_crop"])
 
                         # for every output,
-                        pipe_clients[pipe_idx].put(outputs)
+                        pipe_clients[pipe_idx].put((job_id, outputs))
 
                         # except Exception as e:
                         #     print(e)
