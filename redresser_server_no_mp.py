@@ -183,7 +183,12 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
     mode = options.get("mode")
     if pipeline.is_server:
         # insert loras if not ads
-        insert_loras = not options.get("createdFromAds", False) and not options.get("useHyper", False)
+        createdFromAd = options.get("createdFromAd", False)
+        if createdFromAd:
+            insert_loras = False
+            options["steps"] = 8
+        else:
+            insert_loras = True
         pipeline.settings.map_dfs_options(options, mode, insert_loras=insert_loras)
         if not isinstance(pipeline.settings, CogSettings) and not isinstance(pipeline.settings, WanSettings):
             # all models should be fused with either hyper or turbo so keep this at 8
