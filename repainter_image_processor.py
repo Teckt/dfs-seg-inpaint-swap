@@ -262,13 +262,15 @@ class ImageProcessor:
             seg_img.resize((image_resize_params.new_w, image_resize_params.new_h))
         elif segment_id == RedresserSettings.SEGMENT_FACE:
 
-            # process and segment the image (person/fashion)
+            # process and segment the face
             orig_img, seg_img = yolo_segment_image(self.head_seg_model, image)[0]
             # _orig_img = np.array(orig_img, dtype=np.uint8)
             # seg_img = np.array(seg_img, dtype=np.uint8)
             # seg_img[_orig_img == 255] = 255
 
-            seg_img = Image.fromarray(face_masks_combined)
+            seg_img = expand_mask(face_masks_combined, (5, 5))
+            seg_img = Image.fromarray(seg_img)
+
             # seg_img = Image.fromarray(seg_img)
 
             orig_img = orig_img.resize((image_resize_params.new_w, image_resize_params.new_h))
@@ -283,13 +285,19 @@ class ImageProcessor:
         else:
             # process and segment the image (person/fashion)
             orig_img, seg_img = yolo_segment_image(self.f_seg_model, image)[0]
-            _orig_img = np.array(orig_img, dtype=np.uint8)
+            # _orig_img = np.array(orig_img, dtype=np.uint8)
             seg_img = np.array(seg_img, dtype=np.uint8)
-            seg_img[_orig_img == 255] = 255
+            m = (seg_img.shape[0] + seg_img.shape[1]) // 64
+            if m % 2 == 0:
+                m = m + 1
+            seg_img = expand_mask(seg_img, (m, m))
+            if pad_mask is not None:
+                # modify this so only the borders will be affected MATHS
+                seg_img[orig_img == 255] = 255
             # test here to use noise on original where mask is
             # _orig_img[seg_img == 255] = np.random.randint(0, 256)
             seg_img = Image.fromarray(seg_img)
-            # orig_img = Image.fromarray(_orig_img)
+            orig_img = Image.fromarray(orig_img)
             orig_img = orig_img.resize((image_resize_params.new_w, image_resize_params.new_h))
         # if seg_path is not None:
         #     seg_img.save(seg_path)
@@ -298,6 +306,11 @@ class ImageProcessor:
         # process and segment the image (hands)
         if self.settings.options["keep_hands"]:
             _, seg_img_hands = yolo_segment_image(self.hand_seg_model, image)[0]
+            m = (seg_img_hands.shape[0] + seg_img_hands.shape[1]) // 512
+            if m % 2 == 0:
+                m = m + 1
+            seg_img_hands = expand_mask(seg_img_hands, (m, m))
+            seg_img_hands = Image.fromarray(seg_img_hands)
             if seg_path is not None and SAVE_SEG_IMAGES:
                 seg_img_hands.save(seg_path + "-hands.png")
         # if seg_image_dir is None or not os.path.exists(seg_path):
@@ -320,6 +333,10 @@ class ImageProcessor:
                 "keep_face"]:  # removes faces from seg; used to keep faces intact or for face restore
                 # convert to numpy
                 face_mask = face_masks_combined#cv2.resize(face_masks_combined, (image_resize_params.new_w, image_resize_params.new_h), interpolation=cv2.INTER_CUBIC)
+                m = (face_mask.shape[0] + face_mask.shape[1]) // 512
+                if m % 2 == 0:
+                    m = m + 1
+                face_mask = expand_mask(face_mask, (m, m))
                 # seg_img = np.array(seg_img, dtype=np.uint8)
                 seg_img[face_mask > 25] = 0  # set all pixels to black if face_mask(white fill) is above noise level
 
@@ -343,6 +360,28 @@ class ImageProcessor:
         control_image_inpaint = make_inpaint_condition(orig_img, seg_img, 0.5)
 
         return orig_img, seg_img, control_image_inpaint
+
+
+def expand_mask(seg_img, size=(5, 5)):
+    if len(seg_img.shape) == 3 and seg_img.shape[-1] > 1:
+        mask = seg_img[..., 0]
+    else:
+        mask = seg_img
+
+    if len(mask.shape) == 2:
+        mask = np.expand_dims(mask, -1)
+
+    element = cv2.getStructuringElement(cv2.MORPH_RECT, size)
+    mask = cv2.dilate(mask, element)
+
+    if len(seg_img.shape) == 3:
+        if len(mask.shape) == 2:
+            mask = np.expand_dims(mask, -1)
+        if seg_img.shape[-1] > 1:
+            mask = np.concatenate([mask, mask, mask], axis=-1)
+
+    return mask
+
 
 
 def save_image(image, output_path):
@@ -448,7 +487,7 @@ if __name__ == "__main__":
                             settings.options["center_crop"])
 
                         # for every output,
-                        pipe_clients[pipe_idx].put((job_id, outputs))
+                        pipe_clients[pipe_idx].put((job_id, outputs), max_retries=99999999, retry_wait=3)
 
                         # except Exception as e:
                         #     print(e)

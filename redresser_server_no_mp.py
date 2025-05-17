@@ -183,7 +183,7 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
     mode = options.get("mode")
     if pipeline.is_server:
         # insert loras if not ads
-        insert_loras = not options.get("createdFromAds", False)
+        insert_loras = not options.get("createdFromAds", False) and not options.get("useHyper", False)
         pipeline.settings.map_dfs_options(options, mode, insert_loras=insert_loras)
         if not isinstance(pipeline.settings, CogSettings) and not isinstance(pipeline.settings, WanSettings):
             # all models should be fused with either hyper or turbo so keep this at 8
@@ -212,7 +212,7 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
         print("passing settings to image processor")
         while True:
             try:
-                img_client.put(job_processor.job_id, pipeline.settings)
+                img_client.put((None if job_processor is None else job_processor.job_id, pipeline.settings))
                 break
             except ConnectionRefusedError:
                 print("\rError! Trying again in 5 seconds...", end="")
@@ -244,12 +244,12 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
 
             job_id, im_outputs = pipe_output
             # loop until the job id is the same
-            if job_id != job_processor.job_id:
+            if job_processor is not None and job_id != job_processor.job_id:
                 print("passing settings to image processor")
                 while True:
                     while True:
                         try:
-                            img_client.put(job_processor.job_id, pipeline.settings)
+                            img_client.put(None if job_processor is None else job_processor.job_id, pipeline.settings)
                             break
                         except ConnectionRefusedError:
                             print("\rError! Trying again in 1 seconds...", end="")
@@ -277,8 +277,6 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
 
 
 def maybe_switch_pipelines(pipeline_switch_server, pipeline):
-    print("should be running on server")
-    return
     print("maybe_switch_pipelines")
     try:
         to_switch = pipeline_switch_server.get(blocking=False)
@@ -342,8 +340,8 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0", use_hyper=False, soc
     #     pipe_server = None
     # pipeline = None
 
-    pipeline_switch_server = None  # was testing pipeline switch; should be unnecessary now
-    # pipeline_switch_server = SocketServer(7777)
+    # pipeline_switch_server = None  # was testing pipeline switch; should be unnecessary now
+    pipeline_switch_server = SocketServer(7777)
     pipeline = get_pipeline(r, is_server, use_hyper)
 
     if is_server:
@@ -520,8 +518,8 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0", use_hyper=False, soc
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("-r", "--r", default='flux')
-    parser.add_argument("-s", "--is_server", default=True, action='store_true')
+    parser.add_argument("-r", "--r", default='flux-fill')
+    parser.add_argument("-s", "--is_server", default=False, action='store_true')
     parser.add_argument("-m", "--machine_id", default='OVERLORD4-0')
     parser.add_argument("-t", "--use_hyper", default=False, action='store_true')
     parser.add_argument("-p", "--socket_port", default="5000")

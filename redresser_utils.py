@@ -181,27 +181,27 @@ class RedresserSettings:
     hand_model_path = "hand_yolov9c.pt"  # downloads from Bingsu/adetailer
     default_options = {
         # "prompt": "best quality 4k, <jjk-d-step00000300>close-up shot of a jjk face, shoulder-length hair",
-        "prompt": "",
-        "image": "dance",
+        "prompt": "a magic forest",
+        "image": "images/insta",
         # "mask": "seg/00000.png",
-        "guidance_scale": 3.5,
+        "guidance_scale": 30,
         "num_inference_steps": 8,
         # "negative_prompt": None,
         # "strength": None,
         # "clip_skip": 0,
         "seed": -1,
-        "max_side": 1024,  # used for fill
+        "max_side": 1200,  # used for fill
         "height": 1024,  # used for t2i only
         "width": 1024,  # used for t2i only
         "center_crop": False,
         "padding": 0,
-        "SEGMENT_ID": SEGMENT_PERSON,
+        "SEGMENT_ID": SEGMENT_FASHION,
         "keep_hands": True,
         "keep_face": True,
         # "face_mask_scale": 1.0,
         # "use_faceswap": False,
         "runs": 1,  # how many times to run with these settings
-        "mode": 0,  # 0 for t2i, 1 for fill
+        "mode": 1,  # 0 for t2i, 1 for fill
     }
 
     def __init__(self, ):
@@ -331,7 +331,7 @@ class RedresserSettings:
                     self.options[key] = float(self.options[key])
                 except:
                     self.options[key] = self.__class__.default_options[key]
-            if key in ['max_area', 'num_frames', 'num_inference_steps', 'max_side', 'height', 'width', "strength", "clip_skip", "seed", "SEGMENT_ID"]:
+            if key in ['mode', 'max_area', 'num_frames', 'num_inference_steps', 'max_side', 'height', 'width', "strength", "clip_skip", "seed", "SEGMENT_ID"]:
                 try:
                     self.options[key] = int(self.options[key])
                 except:
@@ -503,7 +503,7 @@ def yolo8_extract_faces(face_extractor, face_seg_model, inputs, max_faces, conf_
                     _processed_image = cv2.resize(processed_image, (320, 320), cv2.INTER_CUBIC)
                     _, seg_mask = yolo_segment_image(img=_processed_image, yolo_model=face_seg_model, return_original_image=False)[0]
                     # resize back to 256x256... or not
-                seg_mask = np.array(seg_mask)
+                seg_mask = seg_mask
                 cv2.imwrite(f"seg/seg-mask-{idx}.png", seg_mask)
 
                 batch_extracted_new_params[out_idx][idx] = {
@@ -596,8 +596,8 @@ def yolo_segment_image(yolo_model, img, return_original_image=True):
 
         seg_results.append(
             [
-                Image.fromarray(imgg) if return_original_image else None,
-                Image.fromarray(empty_img)
+                imgg if return_original_image else None,
+                empty_img
             ]
         )
 
@@ -651,7 +651,7 @@ class SocketClient:
         self.port = port
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    def put(self, data, max_retries=99, retry_wait=1, use_pickle=True):
+    def put(self, data, use_pickle=True, max_retries=99, retry_wait=1, ):
         cur_retries = 0
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         while True:
