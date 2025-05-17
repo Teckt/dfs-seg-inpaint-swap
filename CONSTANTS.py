@@ -4,7 +4,7 @@ FLUX_FILL_PATH = 'black-forest-labs/FLUX.1-Fill-dev'
 FLUX_PATH = 'black-forest-labs/FLUX.1-dev'
 COG_PATH = 'THUDM/CogVideoX-5b-I2V'  # cogxvideo repo
 
-USE_CPU_OFFLOAD = False  # vram savings
+USE_CPU_OFFLOAD = True  # vram savings
 USE_SEQUENTIAL_CPU_OFFLOAD = False  # bigger vram savings
 
 USE_CUSTOM_FLUX = True

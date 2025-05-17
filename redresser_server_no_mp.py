@@ -277,7 +277,7 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
 
 
 def maybe_switch_pipelines(pipeline_switch_server, pipeline):
-    print("maybe_switch_pipelines")
+    # print("maybe_switch_pipelines")
     try:
         to_switch = pipeline_switch_server.get(blocking=False)
         if to_switch == "fill":
@@ -519,7 +519,7 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("-r", "--r", default='flux-fill')
-    parser.add_argument("-s", "--is_server", default=False, action='store_true')
+    parser.add_argument("-s", "--is_server", default=True, action='store_true')
     parser.add_argument("-m", "--machine_id", default='OVERLORD4-0')
     parser.add_argument("-t", "--use_hyper", default=False, action='store_true')
     parser.add_argument("-p", "--socket_port", default="5000")
