@@ -5,7 +5,7 @@ import time
 import cv2
 from PIL import Image
 
-from dfs_seg_inpaint_swap.wan import VideoAnnotator, WanVideoGenerator, WanSettings
+from wan import VideoAnnotator, WanVideoGenerator, WanSettings
 from diffusers.utils.export_utils import _legacy_export_to_video
 from redresser_utils import RedresserSettings
 from fire_functions import FirestoreFunctions
