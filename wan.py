@@ -21,10 +21,10 @@ from diffusers import BitsAndBytesConfig
 from ultralytics import YOLO
 
 from cog import run_ffmpeg_optical_flow, VideoGenerator
-from dfs_seg_inpaint_swap.tf_free_functions import paste_swapped_image, paste_image_with_mask
+from tf_free_functions import paste_swapped_image, paste_image_with_mask
 from redresser_utils import RedresserSettings, yolo8_extract_faces, ImageResizeParams, yolo_segment_image
 from CONSTANTS import *
-from dfs_seg_inpaint_swap.repainter_image_processor import ImageProcessor, expand_mask
+from repainter_image_processor import ImageProcessor, expand_mask
 
 
 def concatenate_videos(video_path1, video_path2, output_path):
