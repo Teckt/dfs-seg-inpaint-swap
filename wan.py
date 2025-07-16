@@ -1,6 +1,5 @@
 import os
 import time
-import moviepy
 import PIL
 import huggingface_hub
 import numpy as np
