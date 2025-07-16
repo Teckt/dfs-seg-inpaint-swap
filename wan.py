@@ -196,29 +196,31 @@ class WanVideoGenerator(VideoGenerator):
             vae = AutoencoderKLWan.from_pretrained(
                 model_id, subfolder="vae", torch_dtype=torch.float32)
 
-        # text_encoder_path = "Anyfusion/umt5-xxl-encoder-fp8"
-        # if "Anyfusion/" in text_encoder_path:
-        #     local_dir = text_encoder_path.replace("Anyfusion/", "")
-        #     if os.path.exists(os.path.join(local_dir, "diffusion_pytorch_model.safetensors")):
-        #         text_encoder_path = local_dir
-        # with tqdm(desc="Loading text_encoder"):
-        #     text_encoder = UMT5EncoderModel.from_pretrained(
-        #         text_encoder_path,
-        #         # model_id,
-        #         # subfolder="text_encoder",
-        #         # quantization_config=quant_config,
-        #
-        #         torch_dtype=torch.bfloat16
-        #     )
-        #     text_encoder.to(torch.bfloat16)
 
         # original
-        with tqdm(desc="Loading original text_encoder from Wan-AI--Wan2.1-I2V-14B-480P-Diffusers"):
-            text_encoder = UMT5EncoderModel.from_pretrained(
-                "D:\\huggingface\\models--Wan-AI--Wan2.1-I2V-14B-480P-Diffusers\\snapshots\\ba97433dcc621976ffdde384974f890f64190b18",
-                subfolder="text_encoder",
-                torch_dtype=torch.bfloat16
-            )
+        if os.path.exists("D:\\huggingface\\models--Wan-AI--Wan2.1-I2V-14B-480P-Diffusers\\snapshots\\ba97433dcc621976ffdde384974f890f64190b18"):
+            with tqdm(desc="Loading original text_encoder from Wan-AI--Wan2.1-I2V-14B-480P-Diffusers"):
+                text_encoder = UMT5EncoderModel.from_pretrained(
+                    "D:\\huggingface\\models--Wan-AI--Wan2.1-I2V-14B-480P-Diffusers\\snapshots\\ba97433dcc621976ffdde384974f890f64190b18",
+                    subfolder="text_encoder",
+                    torch_dtype=torch.bfloat16
+                )
+        else:
+            text_encoder_path = "Anyfusion/umt5-xxl-encoder-fp8"
+            if "Anyfusion/" in text_encoder_path:
+                local_dir = text_encoder_path.replace("Anyfusion/", "")
+                if os.path.exists(os.path.join(local_dir, "diffusion_pytorch_model.safetensors")):
+                    text_encoder_path = local_dir
+            with tqdm(desc="Loading text_encoder"):
+                text_encoder = UMT5EncoderModel.from_pretrained(
+                    text_encoder_path,
+                    # model_id,
+                    # subfolder="text_encoder",
+                    # quantization_config=quant_config,
+
+                    torch_dtype=torch.bfloat16
+                )
+                text_encoder.to(torch.bfloat16)
 
         with tqdm(desc="Loading transformer"):
             # DO NOT USE QUANTIZED 1.3B, OUTPUT IS JUST NOISE
