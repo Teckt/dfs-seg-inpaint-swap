@@ -168,7 +168,10 @@ class RedresserSettings:
     SEGMENT_FASHION = 0
     SEGMENT_PERSON = 1
     SEGMENT_FACE = 2  # Ignores keep_face; FaceGen
-    SEGMENT_ALL = 3  # replaces whole image unless keep_face or keep_hands is True
+    SEGMENT_ALL = 3  # masks whole image (just white image) unless keep_face or keep_hands is True
+    POSE_FULL = 4  # replaces whole image; no mask
+    SEGMENT_BG = 5  # inverse person
+    SEGMENT_DEPTH = 6  # replaces whole image; no mask
 
     # why are these here? FOR CONVENIENCE
     xseg_model_path = "xseg/saved_model"  # local path only
@@ -181,16 +184,16 @@ class RedresserSettings:
     hand_model_path = "hand_yolov9c.pt"  # downloads from Bingsu/adetailer
     default_options = {
         # "prompt": "best quality 4k, <jjk-d-step00000300>close-up shot of a jjk face, shoulder-length hair",
-        "prompt": "a magic forest",
-        "image": "images/insta",
+        "prompt": "",
+        "image": "51969813_462653431140635_4816065055344143826_n_SwinIR - Copy.png",
         # "mask": "seg/00000.png",
-        "guidance_scale": 30,
-        "num_inference_steps": 8,
+        "guidance_scale": 3.5,
+        "num_inference_steps": 28,
         # "negative_prompt": None,
         # "strength": None,
         # "clip_skip": 0,
         "seed": -1,
-        "max_side": 1200,  # used for fill
+        "max_side": 1024,  # used for fill
         "height": 1024,  # used for t2i only
         "width": 1024,  # used for t2i only
         "center_crop": False,

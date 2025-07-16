@@ -10,9 +10,11 @@ from ultralytics import YOLO
 from redresser_utils import RedresserSettings, ImageResizeParams, yolo8_extract_faces, yolo_segment_image, \
     make_inpaint_condition, pad_image, SocketClient, SocketServer
 import cv2
-import PIL.Image as Image
+
 import numpy as np
 from CONSTANTS import *
+from PIL import Image, ImageFile
+
 
 class ImageProcessor:
     def __init__(self):
@@ -35,7 +37,7 @@ class ImageProcessor:
         '''
         segment_id = self.settings.options["SEGMENT_ID"]
         if segment_id not in [RedresserSettings.SEGMENT_FASHION, RedresserSettings.SEGMENT_PERSON,
-                              RedresserSettings.SEGMENT_FACE, RedresserSettings.SEGMENT_ALL]:
+                              RedresserSettings.SEGMENT_FACE, RedresserSettings.SEGMENT_ALL, RedresserSettings.SEGMENT_DEPTH, RedresserSettings.POSE_FULL, RedresserSettings.SEGMENT_BG]:
             print("segment_type does not exist:", segment_id)
             assert False
 
@@ -49,7 +51,7 @@ class ImageProcessor:
         # segments images
         # if self.f_seg_model is None:
         print("loading f_seg model")
-        if segment_id == RedresserSettings.SEGMENT_PERSON:
+        if segment_id in (RedresserSettings.SEGMENT_PERSON, RedresserSettings.SEGMENT_BG):
             self.f_seg_model = YOLO(hf_hub_download("Bingsu/adetailer", RedresserSettings.person_model_path))
         elif segment_id == RedresserSettings.SEGMENT_FASHION:
             self.f_seg_model = YOLO(hf_hub_download("Bingsu/adetailer", RedresserSettings.fashion_model_path))
@@ -73,8 +75,15 @@ class ImageProcessor:
         else:
             seg_path = f"{os.path.basename(image_path)}-seg.png" #{str(video_index).zfill(5)}
 
-        frame = cv2.imread(image_path)
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        try:
+            frame = cv2.imread(image_path)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        except cv2.error:
+            ImageFile.LOAD_TRUNCATED_IMAGES = True
+            pil_img = Image.open(image_path)
+            pil_img.load()  # Force loading the image data
+
+            frame = np.array(pil_img)
         h, w = frame.shape[:2]
 
         if mask_path is not None:

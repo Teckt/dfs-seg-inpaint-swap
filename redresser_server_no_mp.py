@@ -175,12 +175,15 @@ def get_pipeline(r, is_server, use_hyper):
         r = VideoGenerator(is_server=is_server)
     elif r == "wan-480":
         r = WanVideoGenerator(is_server=is_server)
+    elif r == "flux-kontext":
+        r = Redresser(is_server=is_server, model="fill", use_hyper=use_hyper, use_kontext=True)
     return r
 
 
 def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_client:SocketClient, job_processor):
     # 0 for t2i, 1 for repaint
-    mode = options.get("mode")
+
+    mode = options.get("mode", 0)
     if pipeline.is_server:
         # insert loras if not ads
         createdFromAd = options.get("createdFromAd", False)
@@ -214,6 +217,11 @@ def run_redresser_flux_process(pipeline, options, pipe_server:SocketServer, img_
         print("passed settings", pipeline.settings.options)
 
     if mode == 1:  # 1 for repaint
+        if pipeline.use_kontext:
+            print("running pipeline")
+            pipeline.run(None, None, None, None, None, None, None, None)
+            return True
+
         print("passing settings to image processor")
         while True:
             try:
@@ -350,8 +358,9 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0", use_hyper=False, soc
     pipeline = get_pipeline(r, is_server, use_hyper)
 
     if is_server:
-
-        RepaintJobProcesser.make_dirs(JOB_DIR)
+        from pathlib import Path
+        RepaintJobProcesser.make_dirs(os.path.join(Path().absolute(), JOB_DIR))
+        print("JOB_DIR=", os.path.join(Path().absolute(), JOB_DIR))
         firestoreFunctions = FirestoreFunctions()
         FirestoreFunctions.machine_id = machine_id
         firestoreFunctions.machine_id = machine_id
@@ -504,6 +513,7 @@ def run(r="flux", is_server=True, machine_id="OVERLORD4-0", use_hyper=False, soc
             settings = WanSettings()
         else:
             settings = RedresserSettings()
+
         while True:
             settings.set_options()
             # check for switching pipelines here after user input for local
@@ -535,7 +545,7 @@ if __name__ == "__main__":
     machine_id = args.machine_id
     use_hyper = args.use_hyper
     socket_port = int(args.socket_port)
-    pipe_ids = ("flux", "flux-fill", "sd15", "sd15-fill", "cog-i2v", "wan-480", "sd15-v2v")
+    pipe_ids = ("flux", "flux-fill", "flux-kontext", "sd15", "sd15-fill", "cog-i2v", "wan-480", "sd15-v2v")
     if r not in pipe_ids:
         raise ValueError("r must be in one of pipe_ids:", pipe_ids)
     print(f"running with {r},is_server={is_server},machine_id={machine_id}")

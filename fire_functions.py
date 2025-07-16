@@ -17,7 +17,7 @@ from firebase_admin import credentials
 from firebase_admin import firestore
 from firebase_admin import storage
 from firebase_admin import messaging
-# from firebase_admin import auth
+from firebase_admin import auth
 # from idna import unicode, re
 import google.api_core.exceptions as google_exceptions
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -54,6 +54,7 @@ class FirestoreFunctions:
     swapImageJobsRef = db.collection(u'swapImageJobs')
     repaintImageJobsRef = db.collection(u'redresserImageJobs')
     repaintImageFaceswapJobsRef = db.collection(u'redresserImageFaceswapJobs')
+    wanVideoJobsRef = db.collection(u'wanVideoJobs')
     usersRef = db.collection(u'users')
 
     currentJobRef = None
@@ -83,6 +84,7 @@ class FirestoreFunctions:
     TRAINING_JOB = "trainingJob"
 
     REPAINT_IMAGE_JOB = 'repaintImageJob'
+    WAN_VIDEO_JOB = 'wanVideoJobs'
 
     def __init__(self):
         job_dir = JOB_DIR
@@ -99,6 +101,23 @@ class FirestoreFunctions:
         self.modelBase = None
         self.modelPretrainedTier = None
 
+    # === Firebase Auth Verification ===
+    @staticmethod
+    def authenticate_user(id_token: str, passed_uid: str, ):
+        # Verify ID token via Admin SDK
+        try:
+            decoded = auth.verify_id_token(id_token)
+            user_id = decoded['uid']
+            email = decoded.get('email')
+        except Exception as e:
+            return False, f"Authentication failed. Invalid token. {str(e)}"
+
+        # Ensure the passed UID matches the token's UID
+        if user_id != passed_uid:
+            return False, "Authentication mismatch: UID does not match token."
+
+        # For demonstration, just echo user info and prompt
+        return True, f"User {email} (UID: {user_id}) authenticated successfully."
 
     @staticmethod
     def human_time(timestamp):
@@ -312,6 +331,8 @@ class FirestoreFunctions:
             ref = FirestoreFunctions.swapImageJobsRef
         elif job_type == FirestoreFunctions.REPAINT_IMAGE_JOB:
             ref = FirestoreFunctions.repaintImageJobsRef
+        elif job_type == FirestoreFunctions.WAN_VIDEO_JOB:
+            ref = FirestoreFunctions.wanVideoJobsRef
         else:
             ref = None
 
@@ -447,6 +468,9 @@ class FirestoreFunctions:
             if job_type == FirestoreFunctions.REPAINT_IMAGE_JOB:
                 jobs = ref.where(filter=FieldFilter("mode", "==", repaint_mode)).where(filter=FieldFilter("jobStatus", "==", "queued"))\
                     .order_by(u'queuedTime', direction=firestore.firestore.Query.ASCENDING).get()
+            elif job_type == FirestoreFunctions.WAN_VIDEO_JOB:
+                jobs = ref.where(filter=FieldFilter("jobStatus", "==", "queued"))\
+                    .order_by(u'queuedTime', direction=firestore.firestore.Query.ASCENDING).get()
             else:
                 jobs = ref.where(filter=FieldFilter("jobStatus", "==", "queued")).where(filter=FieldFilter("resolution", "in", resolutions)).order_by(u'queuedTime', direction=firestore.firestore.Query.ASCENDING).get()
 
@@ -467,13 +491,22 @@ class FirestoreFunctions:
                 use_hyper = bool(job.get("useHyper"))
             except KeyError:
                 use_hyper = True
-            print(f"user_id:{user_id}, job_id={job.id}, use_hyper={use_hyper}, machine_id={machine_id}")
-            if use_hyper and repaint_hyper_mode:
-                pass
-            elif not use_hyper and not repaint_hyper_mode:
-                pass
-            else:
-                continue
+
+            try:
+                credit_cost = int(job.get("creditCost"))
+            except KeyError:
+                credit_cost = 0
+
+            print(f"user_id:{user_id}, job_id={job.id}, use_hyper={use_hyper}, machine_id={machine_id}, credit_cost={credit_cost}")
+
+            if job_type == FirestoreFunctions.REPAINT_IMAGE_JOB:
+
+                if use_hyper and repaint_hyper_mode:
+                    pass
+                elif not use_hyper and not repaint_hyper_mode:
+                    pass
+                else:
+                    continue
 
             if machine_id == "":
                 return job

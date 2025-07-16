@@ -7,7 +7,8 @@ from PIL import Image
 import numpy as np
 import cv2
 import torch
-from diffusers import FluxFillPipeline, AutoencoderKL, FluxTransformer2DModel, FluxPipeline
+from diffusers import FluxFillPipeline, AutoencoderKL, FluxTransformer2DModel, FluxPipeline, FluxKontextPipeline, \
+    GGUFQuantizationConfig
 from huggingface_hub import hf_hub_download
 # from diffusers.utils import load_image
 from tqdm import tqdm
@@ -30,12 +31,13 @@ from fire_functions import FirestoreFunctions
 
 class MyFluxPipe:
 
-    def __init__(self, fill=True, use_hyper=False):
+    def __init__(self, fill=True, use_hyper=False, use_kontext=False):
         self.fire_functions = FirestoreFunctions()
 
         self.dtype = torch.bfloat16
         self.lora_path = LORA_PATH
         self.is_fill = fill
+        self.use_kontext = use_kontext
         self.use_hyper = use_hyper
         self.flux_model_name = self.get_flux_model_name()
 
@@ -51,7 +53,7 @@ class MyFluxPipe:
         self.fused_turbo = False
 
 
-        self.pipes = {"t2i":None, "fill":None}
+        self.pipes = {"t2i":None, "fill":None, "kontext":None}
 
         # load tokenizer
         with tqdm(range(1), "Loading CLIPTextModel") as progress_bar:
@@ -75,9 +77,13 @@ class MyFluxPipe:
             self.text_encoder_2 = T5EncoderModel.from_pretrained(
                 text_encoder_id, **text_encoder_args)
             progress_bar.update()
-            
+
+        if self.use_kontext:
+            pretrained_model_name_or_path = "black-forest-labs/FLUX.1-Kontext-dev"
+        else:
+            pretrained_model_name_or_path = FLUX_FILL_PATH if fill else FLUX_PATH
         pipeline_args = {
-            "pretrained_model_name_or_path": FLUX_FILL_PATH if fill else FLUX_PATH,
+            "pretrained_model_name_or_path": pretrained_model_name_or_path,
             "transformer": None,
             "text_encoder": self.clip_L_text_encoder,
             "text_encoder_2": None,
@@ -85,12 +91,25 @@ class MyFluxPipe:
             "local_files_only": USE_LOCAL_FILES
         }
 
-        transformer = self.load_transformer()
+        if self.use_kontext:
+            transformer = FluxTransformer2DModel.from_single_file(
+                "https://huggingface.co/QuantStack/FLUX.1-Kontext-dev-GGUF/blob/main/flux1-kontext-dev-Q4_0.gguf",
+                # quantization_config=quant_config,
+                quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
+                torch_dtype=torch.bfloat16)
+        else:
+            transformer = self.load_transformer()
+
 
         print("loading pipeline")
+
         if fill:
-            self.pipes["fill"] = FluxFillPipeline.from_pretrained(**pipeline_args)
-            self.pipe = self.pipes["fill"]
+            if self.use_kontext:
+                self.pipes["kontext"] = FluxKontextPipeline.from_pretrained(**pipeline_args)
+                self.pipe = self.pipes["kontext"]
+            else:
+                self.pipes["fill"] = FluxFillPipeline.from_pretrained(**pipeline_args)
+                self.pipe = self.pipes["fill"]
         else:
             self.pipes["t2i"] = FluxPipeline.from_pretrained(**pipeline_args)
             self.pipe = self.pipes["t2i"]
@@ -166,6 +185,12 @@ class MyFluxPipe:
         gets the model path for huggingface flux model or custom flux/hyper models
         :return:
         """
+        if self.use_kontext:
+            if self.use_hyper:
+                return FLUX_FILL_HYPER_CUSTOM_PATH if USE_CUSTOM_FLUX_FILL else FLUX_FILL_PATH
+            else:
+                return FLUX_FILL_CUSTOM_PATH if USE_CUSTOM_FLUX_FILL else FLUX_FILL_PATH
+
         if self.is_fill:
             if self.use_hyper:
                 return FLUX_FILL_HYPER_CUSTOM_PATH if USE_CUSTOM_FLUX_FILL else FLUX_FILL_PATH
@@ -195,7 +220,9 @@ class MyFluxPipe:
                 self.switch_pipe(fill=False)
 
     def switch_pipe(self, fill):
+
         self.is_fill = fill
+
         self.flux_model_name = self.get_flux_model_name()
 
         if torch.cuda.is_available():
@@ -208,10 +235,11 @@ class MyFluxPipe:
             print("CUDA is not available. Running on CPU.")
 
         # just set pipe if already loaded empty
+        fill_pipe_name = "kontext" if self.use_kontext else "fill"
         if fill:
-            if self.pipes["fill"] is not None:
+            if self.pipes[fill_pipe_name] is not None:
                 if USE_CPU_OFFLOAD or USE_SEQUENTIAL_CPU_OFFLOAD:
-                    self.pipe = self.pipes["fill"]
+                    self.pipe = self.pipes[fill_pipe_name]
                 else:
                     print("moving t2i transformer to cpu")
                     self.pipes["t2i"].transformer.to("cpu")
@@ -219,11 +247,11 @@ class MyFluxPipe:
                     max_memory = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
                     print(f"GPU memory allocated: {current_memory:.2f}/{max_memory:.2f} GB")
                     print("moving fill transformer to cuda")
-                    self.pipes["fill"].transformer.to("cuda")
+                    self.pipes[fill_pipe_name].transformer.to("cuda")
                     current_memory = torch.cuda.memory_allocated(device) / (1024 ** 3)  # Convert to GB
                     max_memory = torch.cuda.max_memory_allocated(device) / (1024 ** 3)
                     print(f"GPU memory allocated: {current_memory:.2f}/{max_memory:.2f} GB")
-                    self.pipe = self.pipes["fill"]
+                    self.pipe = self.pipes[fill_pipe_name]
                 print(f"switched pipe to fill")
                 return
         else:
@@ -238,8 +266,13 @@ class MyFluxPipe:
                 return
 
         # load models from current pipe except transformer
+        if self.use_kontext:
+            pretrained_model_name_or_path = "black-forest-labs/FLUX.1-Kontext-dev"
+        else:
+            pretrained_model_name_or_path = FLUX_FILL_PATH if fill else FLUX_PATH
         pipeline_args = {
-            "pretrained_model_name_or_path": FLUX_FILL_PATH if fill else FLUX_PATH,
+            "pretrained_model_name_or_path": pretrained_model_name_or_path,
+
             "transformer": None,
             "text_encoder": self.pipe.text_encoder,
             "text_encoder_2": self.pipe.text_encoder_2,
@@ -280,11 +313,16 @@ class MyFluxPipe:
             self.pipe.transformer.to("cpu")
 
         transformer = self.load_transformer()
+
         print("switching pipeline")
 
         if fill:
-            self.pipes["fill"] = FluxFillPipeline.from_pretrained(**pipeline_args)
-            self.pipe = self.pipes["fill"]
+            if self.use_kontext:
+                self.pipes["kontext"] = FluxKontextPipeline.from_pretrained(**pipeline_args)
+                self.pipe = self.pipes["kontext"]
+            else:
+                self.pipes["fill"] = FluxFillPipeline.from_pretrained(**pipeline_args)
+                self.pipe = self.pipes["fill"]
         else:
             self.pipes["t2i"] = FluxPipeline.from_pretrained(**pipeline_args)
             self.pipe = self.pipes["t2i"]
@@ -360,6 +398,15 @@ class MyFluxPipe:
         transformer_args = {
             "torch_dtype": self.dtype, "local_files_only": USE_LOCAL_FILES
         }
+
+        if self.is_fill and self.use_kontext:
+            transformer = FluxTransformer2DModel.from_single_file(
+                "https://huggingface.co/QuantStack/FLUX.1-Kontext-dev-GGUF/blob/main/flux1-kontext-dev-Q4_0.gguf",
+                # quantization_config=quant_config,
+                quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
+                torch_dtype=torch.bfloat16)
+            return transformer
+
         # only use BNB if original flux models
         if USE_BNB and ((self.flux_model_name == FLUX_PATH and not self.is_fill) or (self.flux_model_name == FLUX_FILL_PATH and self.is_fill)):
             quant_config = DiffusersBitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16)
@@ -453,10 +500,10 @@ class MyFluxPipe:
                         adapter_name=adapter_name_filtered_for_periods)
                     print("Loaded lora into pipe from", lora_file)
                 except huggingface_hub.errors.RepositoryNotFoundError:
-                    print("WARNING:", lora_file, "does not exist.", "Ignoring.")
+                    print("WARNING:", f"{adapter_name}.safetensors", adapter_name_filtered_for_periods, "does not exist.", "Ignoring.")
                     continue
-                except:
-                    print("WARNING:", lora_file, "does not exist.", "Ignoring.")
+                except Exception as e:
+                    print("WARNING:", str(e), "Ignoring.")
                     continue
 
             self.loaded_loras[adapter_name_filtered_for_periods] = float(adapter_scale)

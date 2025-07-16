@@ -4,7 +4,7 @@ FLUX_FILL_PATH = 'black-forest-labs/FLUX.1-Fill-dev'
 FLUX_PATH = 'black-forest-labs/FLUX.1-dev'
 COG_PATH = 'THUDM/CogVideoX-5b-I2V'  # cogxvideo repo
 
-USE_CPU_OFFLOAD = False  # vram savings
+USE_CPU_OFFLOAD = True  # vram savings
 USE_SEQUENTIAL_CPU_OFFLOAD = False  # bigger vram savings
 
 USE_CUSTOM_FLUX = True
@@ -13,6 +13,9 @@ FLUX_HYPER_CUSTOM_PATH = "Anyfusion/flux-hyper-nf4"  # the pretrained path to th
 USE_CUSTOM_FLUX_FILL = True
 FLUX_FILL_CUSTOM_PATH = 'Anyfusion/flux-fill-nf4'  # the pretrained path to the custom fill model
 FLUX_FILL_HYPER_CUSTOM_PATH = 'Anyfusion/flux-fill-hyper-nf4'  # the pretrained path to the custom fill model
+USE_CUSTOM_FLUX_KONTEXT = True
+FLUX_KONTEXT_CUSTOM_PATH = 'Anyfusion/flux-fill-nf4'  # the pretrained path to the custom fill model
+FLUX_KONTEXT_HYPER_CUSTOM_PATH = 'Anyfusion/flux-fill-hyper-nf4'  # the pretrained path to the custom fill model
 
 LORA_PATH = "C:\\Users\\teckt\\PycharmProjects\\kohya\\kohya_ss\\training_data\\model"  # the dir to look for lora files
 
