@@ -22,8 +22,12 @@ from PIL import Image
 import time
 import uuid
 import os
+import random
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
+
+MAX_ACTIVE_JOBS = 4
+
 
 def get_frame(video_path, frame_idx):
     print(f"Getting frame {frame_idx} from {video_path}")
@@ -58,33 +62,11 @@ def update_frame(video_path, frame_idx):
     return get_frame(video_path, frame_idx)
 
 
-def update_slider_from_video(video_path, current_time):
-    # Estimate frame index from current_time (in seconds)
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    cap.release()
-    frame_idx = int(current_time * fps)
-    return frame_idx
+def make_source_video_slider(visible=True):
 
+    source_video = gr.Video(label="Source Video", visible=visible)
 
-def on_slider_change(video_path, frame_idx, current_time):
-    # Calculate the time for the desired frame
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    cap.release()
-    target_time = frame_idx / fps if fps else 0
-
-    # Only update if the time is different (avoid double dipping)
-    if abs(target_time - current_time) > (1.0 / max(fps, 1)) / 2:
-        return gr.update(playback_position=target_time)
-    return gr.update()
-
-
-def make_source_video_slider():
-
-    source_video = gr.Video(label="Source Video", )
-
-    frame_image = gr.Image(label="Source Frame", type="filepath")
+    frame_image = gr.Image(label="Source Frame", type="filepath", visible=visible)
     slider = gr.Slider(
         minimum=0,
         maximum=1,
@@ -94,6 +76,7 @@ def make_source_video_slider():
         interactive=True,
         show_label=True,
         elem_id="source_frame_slider",
+        visible=visible
     )
 
     # When video is loaded, update/show slider max and frame image to last frame of video and hide the video
@@ -116,7 +99,7 @@ def make_universal_options(input_type):
     # universal WAN video options
 
     gr.Markdown("### Universal Options")
-    prompt = gr.Textbox(label="Prompt", placeholder="Enter your prompt here")
+    prompt = gr.Textbox(label="Prompt", placeholder="Enter your prompt here", lines=4,)
     if input_type == "LF2V":
         num_frames = gr.Number(label="Num Frames (0 to process whole control video in 80 frame chunks)", value=81,
                                precision=0, interactive=True)
@@ -238,7 +221,7 @@ def make_tab(input_type):
         with gr.Row():
             with gr.Column():
                 # Universal options
-                prompt = gr.Textbox(label="Prompt", placeholder="Enter your prompt here",)
+                prompt = gr.Textbox(label="Prompt", placeholder="Enter your prompt here", lines=4)
                 if input_type == "LF2V":
                     num_frames = gr.Number(label="Num Frames (0 to process whole control video in 80 frame chunks)",
                                            value=80, precision=0, interactive=True, minimum=0, step=16)
@@ -285,17 +268,32 @@ def make_tab(input_type):
                     outputs=[*ref_image_boxes, ref_visible]
                 )
 
+                conditioning_scale_input = gr.Number(label="Strength (For reference images, I2V, and LF2V and Control Video)", value=1.0, precision=1, interactive=True,
+                                               minimum=0.0, maximum=1.0, step=0.1)
+
+                seed_checkbox = gr.Checkbox(label="Use Random Seed", value=True, interactive=True)
+                seed_input = gr.Number(label="Seed", value=-1, precision=0, interactive=True, minimum=-1, maximum=4294967294, visible=False)
+
+                seed_checkbox.change(
+                    lambda v: gr.update(visible=True, value=int(random.randrange(4294967294))) if v else gr.update(visible=False, value=-1),
+                    inputs=seed_checkbox,
+                    outputs=[seed_input]
+                )
+
                 # Source image or video
-                source_image = None
-                source_video = None
-                slider = None
+
                 if input_type == "I2V":
                     gr.Markdown("### Image Source Options (Select an image to generate from)")
                     source_image = gr.Image(label="Source Image", type="filepath")
-                elif input_type == "LF2V":
+                else:
+                    source_image = gr.Image(label="Source Image", type="filepath", visible=False)
+
+                if input_type == "LF2V":
                     gr.Markdown(
                         "### Video Source Options (Select a video, then select a frame to generate/continue from)")
-                    source_video, frame_image, slider = make_source_video_slider()
+                    source_video, frame_image, slider = make_source_video_slider(visible=True)
+                else:
+                    source_video, frame_image, slider = make_source_video_slider(visible=False)
 
                 # Height and Width for I2V and LF2V
                 if input_type in ["I2V", "LF2V"]:
@@ -359,46 +357,49 @@ def make_tab(input_type):
                 )
 
         # --- Submit Button ---
-        runs = gr.Number(label="Runs", value=1, precision=0, interactive=True, minimum=1, maximum=10)
+        runs = gr.Number(label="Runs", value=1, precision=0, interactive=True, minimum=1, maximum=1, visible=False)
         submit_btn = gr.Button("Submit", variant="primary")
 
         # result video output
-        with gr.Row():
-            with gr.Column():
-                result_video_clip = gr.Video(label="Result Video Clip", interactive=False, visible=False)
-                copy_clip_to_lf2v_btn = gr.Button("Copy to LF2V", visible=False)
-            with gr.Column():
-                result_video_full = gr.Video(label="Result Video Full", interactive=False, visible=False)
-                copy_full_to_lf2v_btn = gr.Button("Copy to LF2V", visible=False)
-        result_info = gr.Label("Generation completed in -", visible=False)
+
+        result_info   = gr.Markdown("**⏳ Your job is processing…**", visible=False)
+        history_button = gr.Button("Go to Jobs", visible=True)
 
         # Prepare input list for submit button
         submit_inputs = [prompt, num_frames, steps, flow_shift, height, width, runs]
+        submit_inputs.extend([source_image, source_video, frame_image, slider])
+        submit_inputs.extend([
+            add_video_control, control_video, start_frame, frame_skip, control_type, *ref_image_boxes
+        ])
+        submit_inputs.extend([
+            conditioning_scale_input, seed_input
+        ])
 
-        if input_type == "I2V":
-            submit_inputs.extend([source_image])
-            submit_inputs.extend([
-                add_video_control, control_video, start_frame, frame_skip, control_type, *ref_image_boxes
-            ])
+        # if input_type == "I2V":
+        #     submit_inputs.extend([source_image])
+        #     submit_inputs.extend([
+        #         add_video_control, control_video, start_frame, frame_skip, control_type, *ref_image_boxes
+        #     ])
 
-        elif input_type == "LF2V":
-            submit_inputs.extend([source_video, frame_image, slider])
-            submit_inputs.extend([
-                add_video_control, control_video, start_frame, frame_skip, control_type, *ref_image_boxes
-            ])
+        # elif input_type == "LF2V":
+        #     submit_inputs.extend([source_video, frame_image, slider])
+        #     submit_inputs.extend([
+        #         add_video_control, control_video, start_frame, frame_skip, control_type, *ref_image_boxes
+        #     ])
 
-        else:
-            submit_inputs.extend([
-                add_video_control, control_video, start_frame, frame_skip, control_type, *ref_image_boxes
-            ])
+        # else:
+        #     submit_inputs.extend([
+        #         add_video_control, control_video, start_frame, frame_skip, control_type, *ref_image_boxes
+        #     ])
 
-    return block, submit_inputs, submit_btn, source_image, source_video, result_info, result_video_clip, result_video_full, copy_clip_to_lf2v_btn, copy_full_to_lf2v_btn
+    return block, submit_inputs, submit_btn, source_image, source_video, result_info, history_button
 
 
 def on_submit_t2v(
         firebase_token, firebase_uid, prompt, num_frames, steps, flow_shift, height, width, runs,
+        source_image=None, source_video=None, frame_image=None, slider_value=None,
         add_video_control=False, control_video=None, start_frame=0, frame_skip=0, control_type="Full Pose",
-        *ref_image_boxes,
+        *ref_image_boxes, conditioning_scale=1.0, seed=-1
 ):
     # ignore source image and video inputs for T2V
     return on_submit(
@@ -406,42 +407,50 @@ def on_submit_t2v(
         source_image=None, source_video=None, frame_image=None, slider_value=None,
         add_video_control=add_video_control, control_video=control_video, start_frame=start_frame,
         frame_skip=frame_skip, control_type=control_type, ref=ref_image_boxes,
+        conditioning_scale=conditioning_scale, seed=seed,
     )
 
 
 def on_submit_i2v(
         firebase_token, firebase_uid, prompt, num_frames, steps, flow_shift, height, width, runs,
-        source_image=None,
+        source_image=None, source_video=None, frame_image=None, slider_value=None,
         add_video_control=False, control_video=None, start_frame=0, frame_skip=0, control_type="Full Pose",
-        *ref_image_boxes,
+        *ref_image_boxes, conditioning_scale=1.0, seed=-1
 ):
     return on_submit(
         firebase_token, firebase_uid, "I2V", prompt, num_frames, steps, flow_shift, height, width, runs,
         source_image=source_image, source_video=None, frame_image=None, slider_value=None,
         add_video_control=add_video_control, control_video=control_video, start_frame=start_frame,
         frame_skip=frame_skip, control_type=control_type, ref=ref_image_boxes,
+        conditioning_scale=conditioning_scale, seed=seed
     )
 
 
 def on_submit_lf2v(
         firebase_token, firebase_uid, prompt, num_frames, steps, flow_shift, height, width, runs,
-        source_video=None, frame_image=None, slider_value=None,
+        source_image=None, source_video=None, frame_image=None, slider_value=None,
         add_video_control=False, control_video=None, start_frame=0, frame_skip=0, control_type="Full Pose",
-        *ref_image_boxes,
+        *ref_image_boxes, conditioning_scale=1.0, seed=-1
 ):
     return on_submit(
         firebase_token, firebase_uid, "LF2V", prompt, num_frames, steps, flow_shift, height, width, runs,
         source_image=None, source_video=source_video, frame_image=frame_image, slider_value=slider_value,
         add_video_control=add_video_control, control_video=control_video, start_frame=start_frame,
         frame_skip=frame_skip, control_type=control_type, ref=ref_image_boxes,
+        conditioning_scale=conditioning_scale, seed=seed
     )
 
 
 def on_submit(
         firebase_token, firebase_uid, input_type, prompt, num_frames, steps, flow_shift, height, width, runs,
         source_image=None, source_video=None, frame_image=None, slider_value=None,
-        add_video_control=False, control_video=None, start_frame=0, frame_skip=0, control_type="Full Pose", ref=None, progress=gr.Progress(track_tqdm=True)
+        add_video_control=False, control_video=None, start_frame=0, frame_skip=0, control_type="Full Pose", ref=None,
+        conditioning_scale=1.0, seed=-1
 ):
+    submit_btns = [gr.update(interactive=False) for _ in range(3)]
+    result_infos = [gr.update(visible=True) for _ in range(3)]
+    history_buttons = [gr.update(visible=True) for _ in range(3)]
+
     start_time = time.time()
 
     authenticated, response_message = FirestoreFunctions.authenticate_user(firebase_token, firebase_uid)
@@ -450,16 +459,27 @@ def on_submit(
     # else:
     #     submit_to_firebase()
 
-    submit_to_firebase(firebase_uid, input_type, prompt, num_frames, steps, flow_shift, height, width, runs,
-        source_image=source_image, source_video=source_video, frame_image=frame_image, slider_value=slider_value,
-        add_video_control=add_video_control, control_video=control_video, start_frame=start_frame, frame_skip=frame_skip, control_type=control_type, ref=ref)
-    return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(value=response_message)
+    try:
+        submit_to_firebase(firebase_uid, input_type, prompt, num_frames, steps, flow_shift, height, width, runs,
+            source_image=source_image, source_video=source_video, frame_image=frame_image, slider_value=slider_value,
+            add_video_control=add_video_control, control_video=control_video, start_frame=start_frame, frame_skip=frame_skip, control_type=control_type, ref=ref,
+            conditioning_scale=conditioning_scale, seed=seed)
+
+    except Exception as e:
+        print(f"Error submitting job: {e}")
+        submit_btns = [gr.update(interactive=True) for _ in range(3)]
+        result_infos = [gr.update(visible=True, value=str(e)) for _ in range(3)]
+        history_buttons = [gr.update(visible=False) for _ in range(3)]
+
+    # we need to update submit buttons, result infos, and go to history buttons
+    return *submit_btns, *result_infos, *history_buttons, gr.update(active=True)
 
 
 def submit_to_firebase(
         firebase_uid, input_type, prompt, num_frames, steps, flow_shift, height, width, runs,
         source_image=None, source_video=None, frame_image=None, slider_value=None,
-        add_video_control=False, control_video=None, start_frame=0, frame_skip=0, control_type="Full Pose", ref=None
+        add_video_control=False, control_video=None, start_frame=0, frame_skip=0, control_type="Full Pose", ref=None,
+        conditioning_scale=1.0, seed=-1
     ):
 
     print("Submitting to Firebase...")
@@ -471,6 +491,7 @@ def submit_to_firebase(
     print("Flow Shift:", flow_shift)
     print("Height:", height)
     print("Width:", width)
+    print("Runs:", runs)
     print("Reference Images:", ref)
     print("Source Image:", source_image)
     print("Source Video:", source_video)
@@ -481,6 +502,9 @@ def submit_to_firebase(
     print("Start Frame:", start_frame)
     print("Frame Skip:", frame_skip)
     print("Control Type:", control_type)
+
+    print("Conditioning Scale:", conditioning_scale)
+    print("Seed:", seed)
 
     # Prepare file paths
     # prepare the job_id from uuid
@@ -543,7 +567,9 @@ def submit_to_firebase(
         'slider_value': slider_value,
         'storage_paths': storage_paths,
         'jobStatus': 'queued',
-        'queuedTime': time.time()
+        'queuedTime': time.time(),
+        'conditioning_scale': conditioning_scale,
+        'seed': seed,
     }
     doc_ref.set(doc_data)
     print("Firestore document created with ID:", job_id)
@@ -552,7 +578,8 @@ def submit_to_firebase(
 
 PAGE_SIZE = 10
 
-def fetch_jobs(firebase_uid, firebase_token, page):
+
+def fetch_jobs(firebase_uid, firebase_token, page, raw=False):
 
     # Authenticate user
     # authenticated, response_message = FirestoreFunctions.authenticate_user(firebase_token, firebase_uid)
@@ -561,39 +588,41 @@ def fetch_jobs(firebase_uid, firebase_token, page):
               .where(filter=FieldFilter("userId", "==", firebase_uid))
 
     query = query.order_by("queuedTime", direction=firestore.firestore.Query.DESCENDING) \
-                 .offset(page * PAGE_SIZE).limit(PAGE_SIZE)
+                 .offset(int(page) * PAGE_SIZE).limit(PAGE_SIZE)
 
     docs = query.get()
     rows = []
+    if raw:
+        return docs
+
     for doc in docs:
         data = doc.to_dict()
+        queuedTime = int(data.get("queuedTime", 0)) if data.get("queuedTime") else 0
+        startedTime = int(data.get("startedTime", 0)) if data.get("startedTime") else 0
+        endedTime = int(data.get("endedTime", 0)) if data.get("endedTime") else 0
+        steps = int(data.get("steps", 0)) if data.get("steps") else 0
+        height = int(data.get("height", 0)) if data.get("height") else 0
+        width = int(data.get("width", 0)) if data.get("width") else 0
         rows.append([
-            doc.id,
+            queuedTime,
             data.get("jobStatus", ""),
+            data.get("input_type", ""),
             data.get("prompt", ""),
-            int(data.get("queuedTime", 0)) if data.get("queuedTime") else 0,
-            int(data.get("startedTime", 0)) if data.get("startedTime") else 0,
-            int(data.get("endedTime", 0)) if data.get("endedTime") else 0
+            data.get("num_frames", 0),
+            steps,
+            f"{height} x {width}",
+            doc.id,
         ])
     print(f"Fetched {len(rows)} jobs for page {page}.")
     print("Rows:", rows)
     return rows
 
-def refresh_jobs(firebase_uid, firebase_token, page):
-    # Authenticate user
-    # authenticated, response_message = FirestoreFunctions.authenticate_user(firebase_token, firebase_uid)
-    # if not authenticated:
-    #     return gr.update(value=response_message)
-
-    # Fetch jobs for the current page
-    jobs = fetch_jobs(firebase_uid, firebase_token, page)
-    return gr.update(value=jobs)
-
 
 def update_page(firebase_uid, firebase_token, page, direction):
     new_page = max(0, page + direction)
-    jobs = fetch_jobs(firebase_uid, firebase_token, new_page)
-    return gr.update(value=jobs), gr.update(value=new_page)
+    # jobs = fetch_jobs(firebase_uid, firebase_token, new_page)
+    # return gr.update(value=jobs), gr.update(value=new_page)
+    return gr.update(value=new_page)
 
 
 def update_page_prev(firebase_uid, firebase_token, page):
@@ -604,10 +633,599 @@ def update_page_next(firebase_uid, firebase_token, page):
     return update_page(firebase_uid, firebase_token, page, 1)
 
 
-def copy_to_lf2v(result_video_path):
-    # This function will be called when the button is clicked
-    # It returns the video path to the LF2V source_video
-    return gr.update(value=result_video_path), gr.update(selected="LF2V")
+def extract_settings_from_job(job_id):
+    job = FirestoreFunctions.db.collection('wanVideoJobs').document(job_id).get()
+
+    job_data = job.to_dict()
+
+    user_id = job.get("userId")
+
+    input_type = job_data.get("input_type")
+    prompt = job_data.get("prompt", "")
+    num_frames = job_data.get("num_frames", 80)
+    steps = job_data.get("steps", 4)
+    flow_shift = job_data.get("flow_shift", 2.0)
+    height = job_data.get("height", 480)
+    width = job_data.get("width", 832)
+    runs = job_data.get("runs", 1)
+    source_image = job_data.get("storage_paths", {}).get("source_image")
+    source_image = download_source_image(user_id, job_id) if source_image else None
+    source_video = job_data.get("storage_paths", {}).get("source_video")
+    source_video = download_source_video(user_id, job_id) if source_video else None
+    frame_image = job_data.get("storage_paths", {}).get("frame_image")
+    frame_image = download_frame_image(user_id, job_id) if frame_image else None
+    slider_value = job_data.get("slider_value", 0)
+    add_video_control = job_data.get("add_video_control", False)
+    control_video = job_data.get("storage_paths", {}).get("control_video")
+    control_video = download_control_video(user_id, job_id) if control_video else None
+    start_frame = job_data.get("start_frame", 0)
+    frame_skip = job_data.get("frame_skip", 0)
+    control_type = job_data.get("control_type", "Full Pose")
+    conditioning_scale = job_data.get("conditioning_scale", 1.0)
+    seed = job_data.get("seed", -1)
+
+    ref_images = [None] * 4
+    job_ref_images = job_data.get("storage_paths", {}).get("reference_images", [])
+    ref_images = [
+        download_reference_image(user_id, job_id, idx) if idx < len(job_ref_images) else None
+        for idx in range(4)
+    ]
+
+    settings = {
+        "input_type": input_type,
+        "prompt": prompt,
+        "num_frames": num_frames,
+        "steps": steps,
+        "flow_shift": flow_shift,
+        "height": height,
+        "width": width,
+        "runs": runs,
+        "source_image": source_image,
+        "source_video": source_video,
+        "frame_image": frame_image,
+        "slider_value": slider_value,
+        "add_video_control": add_video_control,
+        "control_video": control_video,
+        "start_frame": start_frame,
+        "frame_skip": frame_skip,
+        "control_type": control_type,
+        "ref_images": ref_images,
+        "conditioning_scale": conditioning_scale,
+        "seed": seed
+    }
+    print("Extracted settings from job:", settings)
+
+    return (
+        input_type,
+        prompt,
+        num_frames,
+        steps,
+        flow_shift,
+        height,
+        width,
+        runs,
+        source_image,
+        source_video,
+        frame_image,
+        slider_value,
+        add_video_control,
+        control_video,
+        start_frame,
+        frame_skip,
+        control_type,
+        ref_images,
+        conditioning_scale,
+        seed
+    )
+
+def copy_settings(job_id):
+    """Copies settings from a job to the current tab."""
+    (
+        input_type,
+        prompt,
+        num_frames,
+        steps,
+        flow_shift,
+        height,
+        width,
+        runs,
+        source_image,
+        source_video,
+        frame_image,
+        slider_value,
+        add_video_control,
+        control_video,
+        start_frame,
+        frame_skip,
+        control_type,
+        ref_images,
+        conditioning_scale,
+        seed
+    ) = extract_settings_from_job(job_id)
+
+    empty_tab_outputs = [gr.skip()] * 22
+
+    if input_type == "T2V":
+        return (
+            gr.update(value=prompt),
+            gr.update(value=num_frames),
+            gr.update(value=steps),
+            gr.update(value=flow_shift),
+            gr.update(value=height),
+            gr.update(value=width),
+            gr.update(value=runs),
+            gr.skip(),  # No source image for T2V
+            gr.skip(),  # No source video for T2V
+            gr.skip(),  # No frame image for T2V
+            gr.skip(),  # No slider value for T2V
+            gr.update(value=add_video_control),
+            gr.update(value=control_video),
+            gr.update(value=start_frame),
+            gr.update(value=frame_skip),
+            gr.update(value=control_type),
+            *[gr.update(img, visible=True) if img is not None else gr.skip() for img in ref_images],
+            gr.update(value=conditioning_scale),
+            gr.update(value=seed, visible=True),
+
+            *empty_tab_outputs,
+            *empty_tab_outputs,
+
+            gr.Tabs(selected=0)  # switches tab to T2V
+        )
+    elif input_type == "I2V":
+        return (
+            *empty_tab_outputs,
+
+            gr.update(value=prompt),
+            gr.update(value=num_frames),
+            gr.update(value=steps),
+            gr.update(value=flow_shift),
+            gr.update(value=height),
+            gr.update(value=width),
+            gr.update(value=runs),
+            gr.update(value=source_image),
+            gr.skip(),  # No source video for I2V
+            gr.skip(),  # No frame image for I2V
+            gr.skip(),  # No slider value for I2V
+            gr.update(value=add_video_control),
+            gr.update(value=control_video),
+            gr.update(value=start_frame),
+            gr.update(value=frame_skip),
+            gr.update(value=control_type),
+            *[gr.update(img, visible=True) if img is not None else gr.skip() for img in ref_images],
+            gr.update(value=conditioning_scale),
+            gr.update(value=seed, visible=True),
+
+            *empty_tab_outputs,
+
+            gr.Tabs(selected=1)  # switches tab to I2V
+        )
+    elif input_type == "LF2V":
+        return (
+            *empty_tab_outputs,
+            *empty_tab_outputs,
+
+            gr.update(value=prompt),
+            gr.update(value=num_frames),
+            gr.update(value=steps),
+            gr.update(value=flow_shift),
+            gr.update(value=height),
+            gr.update(value=width),
+            gr.update(value=runs),
+            gr.skip(),  # No source image for LF2V
+            gr.update(value=source_video),
+            gr.update(value=frame_image),
+            gr.update(value=slider_value),
+            gr.update(value=add_video_control),
+            gr.update(value=control_video),
+            gr.update(value=start_frame),
+            gr.update(value=frame_skip),
+            gr.update(value=control_type),
+            *[gr.update(img, visible=True) if img is not None else gr.skip() for img in ref_images],
+            gr.update(value=conditioning_scale),
+            gr.update(value=seed, visible=True),
+
+            gr.Tabs(selected=2)  # switches tab to LF2V
+        )
+
+
+def copy_to_lf2v(job_id):
+    """Copies settings from a job to the current tab."""
+    job_doc = FirestoreFunctions.db.collection('wanVideoJobs').document(job_id).get()
+
+    job_data = job_doc.to_dict()
+    user_id = job_data.get("userId")
+    result_video = job_data.get("storage_paths", {}).get("result_video")
+    result_video = download_result_video(user_id, job_id)  # Ensure the result video is downloaded
+    total_frames = get_total_frames(result_video)  # This will ensure the video is processed to get the total frames
+
+    # if there's a control video, increment the start frame by num_frames-1
+
+    (
+        input_type,
+        prompt,
+        num_frames,
+        steps,
+        flow_shift,
+        height,
+        width,
+        runs,
+        source_image,
+        source_video,
+        frame_image,
+        slider_value,
+        add_video_control,
+        control_video,
+        start_frame,
+        frame_skip,
+        control_type,
+        ref_images,
+        conditioning_scale,
+        seed
+    ) = extract_settings_from_job(job_id)
+
+    empty_tab_outputs = [gr.skip()] * 20
+
+    return (
+        *empty_tab_outputs,
+        *empty_tab_outputs,
+
+        gr.update(value=prompt),
+        gr.update(value=num_frames),
+        gr.update(value=steps),
+        gr.update(value=flow_shift),
+        gr.update(value=height),
+        gr.update(value=width),
+        gr.update(value=runs),
+        gr.skip(),  # No source image for LF2V
+        gr.update(value=result_video),  # Use the result video as source video
+        gr.update(value=frame_image),
+        gr.update(value=total_frames - 1),  # Set slider to last frame of the result video
+        gr.update(value=add_video_control),
+        gr.update(value=control_video),
+        gr.update(value=start_frame if not add_video_control else start_frame + num_frames - 1),  # Adjust start frame if control video is present
+        gr.update(value=frame_skip),
+        gr.update(value=control_type),
+        *[gr.update(img, visible=True) if img is not None else gr.skip() for img in ref_images],
+        gr.update(value=conditioning_scale),
+        gr.update(value=seed, visible=True),
+
+        gr.Tabs(selected=2)  # switches tab to LF2V
+    )
+
+
+MAX_CARDS = 10
+
+
+def generate_card_data(job):
+    """Generates data for a job card."""
+
+    """
+        storage_paths = job_doc_data.get('storage_paths', {})
+        print(f"storage_paths; {storage_paths}")
+
+        ref = storage_paths.get('reference_images', None)
+        print(f"ref; {ref}")
+
+        source_image = storage_paths.get('source_image', None)
+        source_video = storage_paths.get('source_video', None)
+        frame_image = storage_paths.get('frame_image', None)
+        slider_value = job_doc_data.get('slider_value', None)
+
+        add_video_control = job_doc_data.get('add_video_control', False)
+        control_video = storage_paths.get('control_video', None)
+        control_type = job_doc_data.get('control_type', 'Full Pose')
+        start_frame = job_doc_data.get('start_frame', 0)
+        frame_skip = job_doc_data.get('frame_skip', 0)
+    """
+    job_id = job.id
+    job = job.to_dict()
+
+    queuedTime = job.get('queuedTime')
+    # convert timestamp to human readable
+    queuedTime = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(queuedTime))
+
+
+    job_status = job.get('jobStatus')
+    job_progress_info = job.get('job_progress_info', "Processing..." if job_status == "started" else "Waiting...")
+    job_progress = str(job.get('job_progress', 0)) + "%"  # Default to 0% if not set
+    md = f"`{job.get('input_type')}`"
+    if job_status == "started":
+        md += f"\n`{job_progress_info}` - `{job_progress}`"
+    elif job_status == "queued":
+        md += f"\n`Queued` - `{queuedTime}`"
+
+    meta_string = f"""
+                                    - **Job ID**: `{job_id}`
+                                    - **Queued**: {queuedTime}
+                                    - **Prompt**: `{job.get("prompt")}`
+                                    - **Num Frames**: {job.get('num_frames')}
+                                    - **Steps**: {job.get('steps')}
+                                    - **Dims**: {job.get('width')}×{job.get('height')}
+                                    - **Strength**: {job.get('conditioning_scale', 0.6):.1f}
+                                    - **Flow Shift**: {job.get('flow_shift'):.1f}
+                                    - **Strength**: {job.get('conditioning_scale', 1.0):.1f}
+                                    - **Seed**: {job.get('seed', -1)}
+                                    """
+
+    # Download reference images
+    storage_paths = job.get('storage_paths', {})
+    ref = storage_paths.get('reference_images', None)
+    ref_images = [None for _ in range(4)]  # Initialize with None for up to 4 images
+    if ref:
+        for idx, img_path in enumerate(ref):
+            ref_image_path = download_reference_image(firebase_uid.value, job_id, idx)
+            ref_images[idx] = ref_image_path
+
+    if job.get('add_control_video'):
+        meta_string += f"- **Control Type**: {job.get('control_type')}\n"
+        meta_string += f"- **Control Frame Index**: {job.get('start_frame')}\n"
+        meta_string += f"- **Control Frame Skip**: {job.get('frame_skip')}\n"
+
+        control_video_path = download_control_video(firebase_uid.value, job_id)
+    else:
+        control_video_path = None
+
+    if job.get('input_type') == 'LF2V':
+        meta_string += f"- **Source Frame Index**: {job.get('slider_value')}\n"
+
+        # Download source video for LF2V
+        source_video_path = download_source_video(firebase_uid.value, job_id)
+    else:
+        source_video_path = None
+
+    if job.get('input_type') == 'I2V':
+        # Download source image for I2V
+        source_image_path = download_source_image(firebase_uid.value, job_id)
+    else:
+        source_image_path = None
+
+    if job_status == "ended":
+        result_video_path = download_result_video(firebase_uid.value, job_id)
+    else:
+        result_video_path = None
+
+    return md, meta_string, result_video_path, ref_images, source_image_path, source_video_path, control_video_path, job_progress_info, job_progress
+
+
+def refresh_cards(uid, token, page, *original_job_states, queued_only=False):
+
+    original_job_id_states, original_job_status_states = original_job_states[:MAX_CARDS], original_job_states[MAX_CARDS:]
+
+    jobs = fetch_jobs(uid, token, page, raw=True)
+    updates = []
+
+    # pre-create all cards
+    card_containers, id_markdowns, videos = ([] for _ in range(3))
+
+    src_img_accs, ref_img_accs, control_vid_accs, source_video_accs = ([] for _ in range(4))
+    history_source_images, history_ref_images, history_control_videos, history_source_videos = ([] for _ in range(4))
+    meta_accs, metas = ([] for _ in range(2))
+    btn_i2v, btn_lf2v = ([] for _ in range(2))
+
+    job_id_states, job_status_states, job_progress_infos, job_progress_bars = ([] for _ in range(4))
+
+    for idx in range(MAX_CARDS):
+        visible = idx < len(jobs)
+        job = jobs[idx]
+        job_status = job.get('jobStatus')
+        if idx < len(jobs):
+
+            original_job_id = original_job_id_states[idx]
+            original_job_status = original_job_status_states[idx]
+            if job.id != original_job_id or  job_status != original_job_status or not queued_only or job_status in ('queued', 'started'):
+                card_data = generate_card_data(job)
+                md, meta_string, result_video_path, ref_image_paths, source_image_path, source_video_path, control_video_path, job_progress_info, job_progress = card_data
+
+                card_containers.append(gr.update(visible=visible))
+                id_markdowns.append(gr.update(value=md, visible=visible))
+                videos.append(gr.update(value=result_video_path, visible=visible))
+
+                if job.id != original_job_id:
+
+                    ref_img_accs.append(gr.update(open=False, visible=ref_image_paths[0] is not None))
+                    history_ref_images.append(gr.update(value=ref_image_paths[0]))
+
+                    src_img_accs.append(gr.update(open=False, visible=source_image_path is not None))
+                    history_source_images.append(gr.update(value=source_image_path))
+
+                    source_video_accs.append(gr.update(open=False, visible=source_video_path is not None))
+                    history_source_videos.append(gr.update(value=source_video_path))
+
+                    control_vid_accs.append(gr.update(open=False, visible=control_video_path is not None))
+                    history_control_videos.append(gr.update(value=control_video_path))
+
+                    meta_accs.append(gr.update(open=False, visible=visible))
+                    metas.append(gr.update(value=meta_string, visible=visible))
+                else:
+                    ref_img_accs.append(gr.skip())
+                    history_ref_images.append(gr.skip())
+                    src_img_accs.append(gr.skip())
+                    history_source_images.append(gr.skip())
+                    source_video_accs.append(gr.skip())
+                    history_source_videos.append(gr.skip())
+                    control_vid_accs.append(gr.skip())
+                    history_control_videos.append(gr.skip())
+                    meta_accs.append(gr.skip())
+                    metas.append(gr.skip())
+
+                btn_i2v.append(gr.update(visible=visible))
+                btn_lf2v.append(gr.update(interactive=True, visible=visible))
+
+                job_id_states.append(gr.update(value=job.id))
+                job_status_states.append(gr.update(value=job_status))
+                # job_progress_infos.append(gr.update(value=job_progress_info, visible=job_status in ('queued', 'started')))
+                job_progress_infos.append(gr.update(value=job_progress_info, visible=False))
+                # TODO make actual bar
+                # job_progress_bars.append(gr.update(value=job_progress, visible=job_status in ('queued', 'started')))
+                job_progress_bars.append(gr.update(value=job_progress, visible=False))
+            else:
+                card_containers.append(gr.skip())
+                id_markdowns.append(gr.skip())
+                videos.append(gr.skip())
+                ref_img_accs.append(gr.skip())
+                history_ref_images.append(gr.skip())
+                src_img_accs.append(gr.skip())
+                history_source_images.append(gr.skip())
+                source_video_accs.append(gr.skip())
+                history_source_videos.append(gr.skip())
+                control_vid_accs.append(gr.skip())
+                history_control_videos.append(gr.skip())
+                meta_accs.append(gr.skip())
+                metas.append(gr.skip())
+                btn_i2v.append(gr.skip())
+                btn_lf2v.append(gr.skip())
+
+                job_id_states.append(gr.skip())
+                job_status_states.append(gr.skip())
+                job_progress_infos.append(gr.skip())
+                job_progress_bars.append(gr.skip())
+
+            # do not update if queued only
+        else:
+            card_containers.append(gr.update(visible=False))
+            id_markdowns.append(gr.update(value="", visible=False))
+            videos.append(gr.update(value=None))
+
+            ref_img_accs.append(gr.update(open=False, visible=False))
+            history_ref_images.append(gr.update(value=None))
+
+            src_img_accs.append(gr.update(open=False, visible=False))
+            history_source_images.append(gr.update(value=None))
+
+            source_video_accs.append(gr.update(open=False, visible=False))
+            history_source_videos.append(gr.update(value=None))
+
+            control_vid_accs.append(gr.update(open=False, visible=False))
+            history_control_videos.append(gr.update(value=None))
+
+            meta_accs.append(gr.update(open=False, visible=False))
+            metas.append(gr.update(value=""))
+            btn_i2v.append(gr.update(visible=False))
+            btn_lf2v.append(gr.update(interactive=job_status=="ended", visible=False))
+
+            job_id_states.append(gr.update(value=job.id))
+            job_status_states.append(gr.update(job_status))
+            job_progress_infos.append(gr.update(visible=False))
+            job_progress_bars.append(gr.update(visible=False))
+
+
+    return (*card_containers, *id_markdowns, *videos,
+            *ref_img_accs, *history_ref_images,
+            *src_img_accs, *history_source_images,
+            *source_video_accs, *history_source_videos,
+            *control_vid_accs, *history_control_videos,
+            *meta_accs, *metas, *btn_i2v, *btn_lf2v,
+            *job_id_states, *job_status_states, *job_progress_infos, *job_progress_bars,
+            )
+
+
+CACHE_DIR = "video_cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
+def download_result_video(user_id, job_id):
+    # 1) Build the storage path
+    blob_path = f"users/{user_id}/wanVideoJobs/{job_id}/result_video.mp4"
+    # 1) Compute a unique, persistent local path
+    local_path = os.path.join(
+        CACHE_DIR, f"{user_id}_{job_id}_result_video.mp4"
+    )
+
+    FirestoreFunctions.chunked_download(blob_path, local_path)
+
+    return local_path  # gr.File will pick this up and serve it
+def download_control_video(user_id, job_id):
+    # 1) Build the storage path
+    blob_path = f"users/{user_id}/wanVideoJobs/{job_id}/control_video.mp4"
+    # 1) Compute a unique, persistent local path
+    local_path = os.path.join(
+        CACHE_DIR, f"{user_id}_{job_id}_control_video.mp4"
+    )
+
+    FirestoreFunctions.chunked_download(blob_path, local_path)
+
+    return local_path  # gr.File will pick this up and serve it
+def download_reference_image(user_id, job_id, idx):
+    # 1) Build the storage path
+    blob_path = f"users/{user_id}/wanVideoJobs/{job_id}/ref_{idx}.png"
+    # 1) Compute a unique, persistent local path
+    local_path = os.path.join(
+        CACHE_DIR, f"{user_id}_{job_id}_ref_{idx}.png"
+    )
+
+    FirestoreFunctions.chunked_download(blob_path, local_path)
+
+    return local_path
+def download_source_video(user_id, job_id):
+    # 1) Build the storage path
+    blob_path = f"users/{user_id}/wanVideoJobs/{job_id}/source_video.mp4"
+    # 1) Compute a unique, persistent local path
+    local_path = os.path.join(
+        CACHE_DIR, f"{user_id}_{job_id}_source_video.mp4"
+    )
+
+    FirestoreFunctions.chunked_download(blob_path, local_path)
+
+    return local_path
+def download_frame_image(user_id, job_id):
+    # 1) Build the storage path
+    blob_path = f"users/{user_id}/wanVideoJobs/{job_id}/frame_image.png"
+    # 1) Compute a unique, persistent local path
+    local_path = os.path.join(
+        CACHE_DIR, f"{user_id}_{job_id}_frame_image.png"
+    )
+
+    FirestoreFunctions.chunked_download(blob_path, local_path)
+
+    return local_path
+def download_source_image(user_id, job_id):
+    # 1) Build the storage path
+    blob_path = f"users/{user_id}/wanVideoJobs/{job_id}/source_image.png"
+    # 1) Compute a unique, persistent local path
+    local_path = os.path.join(
+        CACHE_DIR, f"{user_id}_{job_id}_source_image.png"
+    )
+
+    FirestoreFunctions.chunked_download(blob_path, local_path)
+
+    return local_path
+
+
+def has_active_jobs(firebase_uid, firebase_token):
+    # # Authenticate user
+    # authenticated, response_message = FirestoreFunctions.authenticate_user(firebase_token, firebase_uid)
+    # if not authenticated:
+    #     return False
+
+    # Check for active jobs
+    query = FirestoreFunctions.db.collection("wanVideoJobs") \
+              .where(filter=FieldFilter("userId", "==", firebase_uid)) \
+              .where(filter=FieldFilter("jobStatus", "in", ["queued", "started"])).limit(MAX_ACTIVE_JOBS+1) \
+
+    docs = query.get()
+    return len(docs)
+
+def poll_job_history(firebase_uid, firebase_token, page, *original_job_states ):
+    result_info_message = ""
+    active_job_count = has_active_jobs(firebase_uid, firebase_token)
+
+    if active_job_count >= MAX_ACTIVE_JOBS:
+        submit_btns = [gr.update(interactive=False) for _ in range(3)]
+        result_infos = [gr.update(visible=True, value=result_info_message) for _ in range(3)]
+        history_buttons = [gr.update(visible=True) for _ in range(3)]
+    else:
+        submit_btns = [gr.update(interactive=True) for _ in range(3)]
+        result_infos = [gr.update(visible=False) for _ in range(3)]
+        history_buttons = [gr.update(visible=False) for _ in range(3)]
+
+    gr_components = update_queued_jobs(firebase_uid, firebase_token, page, *original_job_states)
+
+    return *submit_btns, *result_infos, *history_buttons, gr.update(active=active_job_count>0), *gr_components
+
+def update_queued_jobs(firebase_uid, firebase_token, page, *original_job_states):
+    if page != 0:
+        return gr.skip()
+    gr_components = refresh_cards(firebase_uid, firebase_token, page, *original_job_states,  queued_only=True)
+    return gr_components
 
 
 if __name__ == "__main__":
@@ -636,79 +1254,242 @@ if __name__ == "__main__":
         }
 
         # create and return elements for each tab
+        copy_outputs = []
         with gr.Tabs() as tabs:
-            for input_type in input_types:
-                with gr.TabItem(input_type) as tab:
-                    block, submit_inputs, submit_btn, source_image, source_video, result_info, result_video_clip, result_video_full, copy_clip_to_lf2v_btn, copy_full_to_lf2v_btn = make_tab(input_type)
+            for input_type_idx, input_type in enumerate(input_types):
+                with gr.TabItem(input_type, id=input_type_idx) as tab:
+                    block, submit_inputs, submit_btn, source_image, source_video, result_info, history_button = make_tab(input_type)
                 tab_elements[input_type]["tab"] = tab
                 tab_elements[input_type]["block"] = block
+
+                copy_outputs.extend(submit_inputs)
                 tab_elements[input_type]["submit_inputs"] = submit_inputs
+
                 tab_elements[input_type]["submit_btn"] = submit_btn
                 tab_elements[input_type]["source_image"] = source_image
                 tab_elements[input_type]["source_video"] = source_video
                 tab_elements[input_type]["result_info"] = result_info
-                tab_elements[input_type]["result_video_clip"] = result_video_clip
-                tab_elements[input_type]["result_video_full"] = result_video_full
-                tab_elements[input_type]["copy_clip_to_lf2v_btn"] = copy_clip_to_lf2v_btn
-                tab_elements[input_type]["copy_full_to_lf2v_btn"] = copy_full_to_lf2v_btn
+                tab_elements[input_type]["history_button"] = history_button
 
             # job history tab
-            with gr.TabItem("Job History") as job_history_tab:
-                gr.Markdown("### Job History")
+            with gr.TabItem("Job History", id=len(tab_elements)) as job_history_tab:
+                with gr.Row():
+                    gr.Markdown("### Job History")
+                    # Refresh button
+                    refresh_btn = gr.Button("Refresh Jobs")
 
-                page = gr.Number(label="Page", value=0, precision=0, interactive=True, minimum=0)
-                # Fetch initial jobs
-                jobs = fetch_jobs(firebase_uid.value, firebase_token.value, page.value)
+                # pre-create all cards
+                card_containers, id_markdowns, videos = ([] for _ in range(3))
+                job_id_states, job_status_states, job_progress_infos, job_progress_bars = ([] for _ in range(4))
+                src_img_accs, ref_img_accs, control_vid_accs, source_video_accs = ([] for _ in range(4))
+                history_source_images, history_ref_images, history_control_videos, history_source_videos = ([] for _ in range(4))
+                meta_accs, metas = ([] for _ in range(2))
+                btn_i2v, btn_lf2v = ([] for _ in range(2))
 
-                # Create a DataFrame to display jobs
-                job_table = gr.DataFrame(
-                    headers=["Job ID", "Status", "Prompt", "Queued Time", "Started Time", "Ended Time"],
-                    datatype=["str", "str", "str", "number", "number", "number"],
-                    row_count=10,
-                    interactive=True,
-                    value=jobs
-                )
+                _jobs = fetch_jobs(firebase_uid.value, firebase_token.value, 0, raw=True)
+                # Create a grid layout for job cards with columns and rows (2 per row and 5 columns)
+                # arrange the indices in a grid-like structure
 
-                # Refresh button
-                refresh_btn = gr.Button("Refresh Jobs")
-                refresh_btn.click(
-                    refresh_jobs,
-                    inputs=[firebase_uid, firebase_token, page],
-                    outputs=job_table
-                )
+                for _idx in range(MAX_CARDS//2):
+
+                    with gr.Row():
+                        for o_e in range(2):
+                            idx = _idx * 2 + o_e
+                            meta_string = ""
+                            md = ""
+                            result_video_path = None
+                            visible = idx < len(_jobs)
+                            if idx < len(_jobs):
+                                job = _jobs[idx]
+                                card_data = generate_card_data(job)
+                                md, meta_string, result_video_path, ref_image_paths, source_image_path, source_video_path, control_video_path, job_progress_info, job_progress = card_data
+                            with gr.Column() as card:
+                                # header
+                                md = gr.Markdown(md, elem_id=f"job_md_{idx}", visible=visible)
+
+                                job_id = job.id
+                                job_id_state = gr.Textbox(job_id, label="Job ID", elem_id=f"job_id_{idx}", interactive=False, visible=False)
+
+                                job_status = job.get('jobStatus')
+                                job_status_state = gr.Textbox(job_status, label="Job Status", elem_id=f"job_status_{idx}", interactive=False, visible=False)
+
+                                # job_progress_info = gr.Markdown(job_progress_info, visible=job_status in ("queued", "active"), elem_id=f"job_progress_info_{idx}")
+                                job_progress_info = gr.Markdown(job_progress_info, visible=False, elem_id=f"job_progress_info_{idx}")
+                                # job_progress_bar = gr.Markdown(job_progress, elem_id=f"job_progress_{idx}", visible=job_status in ("queued", "active"))
+                                job_progress_bar = gr.Markdown(job_progress, elem_id=f"job_progress_{idx}", visible=False)
+
+                                # media area
+                                history_result_video = gr.Video(result_video_path, label="Result Video", interactive=False, visible=visible, elem_id=f"job_vid_{idx}", height=300, scale=1.0)
+
+                                with gr.Accordion("Reference Image", open=False, visible=ref_image_paths[0] is not None) as ref_img_acc:
+                                    history_ref_image = gr.Image(ref_image_paths[0], label="Reference Image", interactive=False, elem_id=f"job_ref_img_{idx}", height=300, scale=1.0)
+
+                                with gr.Accordion("Source Image", open=False, visible=source_image_path is not None) as src_img_acc:
+                                    history_source_image = gr.Image(source_image_path, label="Source Image", interactive=False, elem_id=f"job_src_img_{idx}", height=300, scale=1.0)
+
+                                with gr.Accordion("Source Video", open=False, visible=source_video_path is not None) as source_vid_acc:
+                                    history_source_video = gr.Video(source_video_path, label="Source Video", interactive=False, elem_id=f"job_src_vid_{idx}", height=300, scale=1.0)
+
+                                with gr.Accordion("Control Video", open=False, visible=control_video_path is not None) as control_vid_acc:
+                                    history_control_video = gr.Video(control_video_path, label="Control Video", interactive=False, elem_id=f"job_control_vid_{idx}", height=300, scale=1.0)
+
+                                # accordion for meta
+                                with gr.Accordion("Metadata", open=False, visible=visible) as acc:
+                                    meta = gr.Markdown(meta_string, elem_id=f"job_meta_{idx}")
+
+                                # action buttons
+                                with gr.Row():
+                                    b_i2v = gr.Button("Copy to i2v", size="sm", interactive=True, visible=visible)
+                                    b_lf2v = gr.Button("Copy to lf2v", size="sm", interactive=job_status=="ended", visible=visible)
+
+                                    b_i2v.click(
+                                        copy_settings,
+                                        inputs=[job_id_state],
+                                        outputs=[
+                                            *copy_outputs,
+                                            tabs
+                                        ]
+                                    )
+
+                                    b_lf2v.click(
+                                        copy_to_lf2v,
+                                        inputs=[job_id_state],
+                                        outputs=[
+                                            *copy_outputs,
+                                            tabs
+                                        ]
+                                    )
+
+                            card_containers.append(card)
+                            id_markdowns.append(md)
+                            videos.append(history_result_video)
+
+                            ref_img_accs.append(ref_img_acc)
+                            history_ref_images.append(history_ref_image)
+
+                            src_img_accs.append(src_img_acc)
+                            history_source_images.append(history_source_image)
+
+                            source_video_accs.append(source_vid_acc)
+                            history_source_videos.append(history_source_video)
+
+                            control_vid_accs.append(control_vid_acc)
+                            history_control_videos.append(history_control_video)
+
+                            meta_accs.append(acc)
+                            metas.append(meta)
+                            btn_i2v.append(b_i2v)
+                            btn_lf2v.append(b_lf2v)
+
+                            job_id_states.append(job_id_state)
+                            job_status_states.append(job_status_state)
+                            job_progress_bars.append(job_progress_bar)
+                            job_progress_infos.append(job_progress_info)
 
                 # Pagination buttons
                 with gr.Row():
                     prev_page_btn = gr.Button("Previous Page")
+                    page = gr.Number(label="Page", value=0, precision=0, interactive=True, minimum=0)
                     next_page_btn = gr.Button("Next Page")
+                refresh_btn2 = gr.Button("Refresh Jobs")
+
+                outputs=[
+                        *card_containers,
+                        *id_markdowns,
+                        *videos,
+
+                        *ref_img_accs, *history_ref_images,
+                        *src_img_accs, *history_source_images,
+                        *source_video_accs, *history_source_videos,
+                        *control_vid_accs, *history_control_videos,
+
+                        *meta_accs, *metas,
+                        *btn_i2v, *btn_lf2v,
+
+                        *job_id_states, *job_status_states, *job_progress_infos, *job_progress_bars,
+                    ]
+
+                refresh_btn.click(
+                    refresh_cards,
+                    inputs=[firebase_uid, firebase_token, page, *(job_id_states + job_status_states)],
+                    outputs=outputs
+                )
+
+                refresh_btn2.click(
+                    refresh_cards,
+                    inputs=[firebase_uid, firebase_token, page, *(job_id_states + job_status_states)],
+                    outputs=outputs
+                )
 
                 prev_page_btn.click(
                     update_page_prev,
                     inputs=[firebase_uid, firebase_token, page],
-                    outputs=[job_table, page]
+                    outputs=[page]
+                ).then(
+                    fn=refresh_cards,
+                    inputs=[firebase_uid, firebase_token, page, *(job_id_states + job_status_states)],
+                    outputs=outputs
                 )
+
                 next_page_btn.click(
                     update_page_next,
                     inputs=[firebase_uid, firebase_token, page],
-                    outputs=[job_table, page]
+
+                    outputs=[page]
+                ).then(
+                    fn=refresh_cards,
+                    inputs=[firebase_uid, firebase_token, page, *(job_id_states + job_status_states)],
+                    outputs=outputs
                 )
+
+        # gather all result_info, submit button, and history button
+        submit_btns, result_infos, history_buttons = ([] for _ in range(len(tab_elements)))
+        for input_type in input_types:
+            submit_btn = tab_elements[input_type]["submit_btn"]
+            result_info = tab_elements[input_type]["result_info"]
+            history_button = tab_elements[input_type]["history_button"]
+
+            # “Go to Job History” just switches tabs
+            history_button.click(lambda: gr.Tabs(selected=len(input_types)), [], [tabs])
+
+            submit_btns.append(submit_btn)
+            result_infos.append(result_info)
+            history_buttons.append(history_button)
+
+
+        # A Timer that runs `poll_controller` every 5 seconds, and once at load
+        job_history_poller = gr.Timer(5)
+
+        outputs = [*submit_btns, *result_infos, *history_buttons, job_history_poller]
+
+        job_history_poller.tick(
+            fn=poll_job_history,
+            inputs=[firebase_uid, firebase_token, page, *(job_id_states + job_status_states)],
+            outputs=[*outputs, *card_containers,
+                *id_markdowns,
+                *videos,
+
+                *ref_img_accs, *history_ref_images,
+                *src_img_accs, *history_source_images,
+                *source_video_accs, *history_source_videos,
+                *control_vid_accs, *history_control_videos,
+
+                *meta_accs, *metas,
+                *btn_i2v, *btn_lf2v,
+
+                *job_id_states, *job_status_states, *job_progress_infos, *job_progress_bars,
+            ]
+        )
 
         # Wire up the submit buttons for each tab
         for input_type in input_types:
             submit_btn = tab_elements[input_type]["submit_btn"]
             submit_inputs = tab_elements[input_type]["submit_inputs"]
-            result_info = tab_elements[input_type]["result_info"]
-            result_video_clip = tab_elements[input_type]["result_video_clip"]
-            result_video_full = tab_elements[input_type]["result_video_full"]
-            copy_clip_to_lf2v_btn = tab_elements[input_type]["copy_clip_to_lf2v_btn"]
-            copy_full_to_lf2v_btn = tab_elements[input_type]["copy_full_to_lf2v_btn"]
 
             # insert the firebase token and uid into the submit inputs
             submit_inputs.insert(0, firebase_token)
             submit_inputs.insert(1, firebase_uid)
-            outputs = [result_video_clip, copy_clip_to_lf2v_btn,
-                        result_video_full, copy_full_to_lf2v_btn,
-                        result_info]
+
             # Set the submit button to call the appropriate function based on input type
             if input_type == "I2V":
 
@@ -730,17 +1511,6 @@ if __name__ == "__main__":
                     outputs=outputs
                 )
 
-            # Wire up the button to update the LF2V source video and switch tab
-            copy_clip_to_lf2v_btn.click(
-                copy_to_lf2v,
-                inputs=result_video_clip,
-                outputs=[tab_elements["LF2V"]["source_video"], tabs]
-            )
-            copy_full_to_lf2v_btn.click(
-                copy_to_lf2v,
-                inputs=result_video_full,
-                outputs=[tab_elements["LF2V"]["source_video"], tabs]
-            )
     demo.title = "Video Generator and Editor"
 
     # Set the width of the main container to 900px

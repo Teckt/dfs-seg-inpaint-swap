@@ -44,11 +44,27 @@ def setup_wan():
     return wan, image_proc
 
 
+def update_progress(pipeline, i, t, callback_kwargs):
+    # print("i", i, "t", t,)
+
+    # increment steps
+    WanVideoGenerator.STEPS_CURRENT = (i + 1) * (WanVideoGenerator.NUM_FRAMES_ITER / WanVideoGenerator.NUM_FRAMES_MAX)
+
+    FirestoreFunctions.wanVideoJobsRef.document(WanVideoGenerator.JOB_ID).set(
+        {
+            "job_progress": int(100 * (WanVideoGenerator.STEPS_CURRENT / WanVideoGenerator.STEPS_MAX)),
+        }, merge=True
+    )
+
+    return callback_kwargs
+
+
 def on_submit(
         wan, image_proc, firebase_token, firebase_uid, input_type, prompt, num_frames, steps, flow_shift, height, width,
         runs,
         source_image=None, source_video=None, frame_image=None, slider_value=None,
-        add_video_control=False, control_video=None, start_frame=0, frame_skip=0, control_type="Full Pose", ref=None
+        add_video_control=False, control_video=None, start_frame=0, frame_skip=0, control_type="Full Pose", ref=None,
+        seed=-1, conditioning_scale=1.0,
 ):
     start_time = time.time()
 
@@ -68,6 +84,9 @@ def on_submit(
     print("Start Frame:", start_frame)
     print("Frame Skip:", frame_skip)
     print("Control Type:", control_type)
+    print("Runs:", runs)
+    print("Seed:", seed)
+    print("Conditioning Scale:", conditioning_scale)
 
     wan.settings.options["width"] = width
     wan.settings.options["height"] = height
@@ -77,16 +96,14 @@ def on_submit(
     wan.settings.options["flow_shift"] = flow_shift
     wan.settings.options["prompt"] = prompt
 
-    def update_progress(pipeline, i, t, callback_kwargs):
-        # print("i", i, "t", t,)
-        current_progress = (i / max(steps, 1))
-
-        return callback_kwargs
+    wan.settings.options["conditioning_scale"] = conditioning_scale
+    wan.settings.options["seed"] = seed
 
     wan.settings.options["callback_on_step_end"] = update_progress
 
     # wan needs 16 + 1 frames minimum, so we add 1 to num_frames; also we discard the first frame; chunks are always 81 but we discard the first one; users don't need to know this so igts just 80
     total_num_frames = num_frames + 1
+
     chunk_size = 32
     if add_video_control and control_video is not None:
         # we can chunk the video into 32 + 1 frames if we have a control video, so we set num_frames to 32 + 1
@@ -98,6 +115,17 @@ def on_submit(
         reference_images = [Image.open(img) for img in ref if img is not None]
     else:
         reference_images = None
+
+    WanVideoGenerator.NUM_FRAMES_MAX = total_num_frames - 1
+    WanVideoGenerator.NUM_FRAMES_ITER = wan.settings.options["num_frames"] - 1
+    WanVideoGenerator.STEPS_MAX = steps
+    WanVideoGenerator.STEPS_CURRENT = 0
+
+    FirestoreFunctions.wanVideoJobsRef.document(WanVideoGenerator.JOB_ID).set(
+        {
+            "job_progress_info": "Applying settings...",
+        }, merge=True
+    )
 
     # set fps and segment id/models for control video
     if add_video_control and control_video is not None:
@@ -142,6 +170,7 @@ def on_submit(
             image_proc.set_seg_models(wan.settings)
 
     # predict loop
+
     for i in range(runs):
         all_video_frames = []
         iterations = 0
@@ -178,7 +207,11 @@ def on_submit(
             # if no control video, do not chunk (the video won't do anything as there aren't enough frames if chunking at 16)
             # prepare control frames and mask
             if add_video_control and control_video is not None:
-
+                FirestoreFunctions.wanVideoJobsRef.document(WanVideoGenerator.JOB_ID).set(
+                    {
+                        "job_progress_info": "Preparing controls...",
+                    }, merge=True
+                )
                 if num_frames == 0:
                     # run until control video ends
                     wan.settings.options[
@@ -213,7 +246,11 @@ def on_submit(
                     video[0] = Image.fromarray(prev_frame.astype("uint8"))
                     if wan.settings.options["SEGMENT_ID"] != RedresserSettings.POSE_FULL:
                         mask[0] = Image.new("RGB", (video[0].width, video[0].height), 0)
-
+            FirestoreFunctions.wanVideoJobsRef.document(WanVideoGenerator.JOB_ID).set(
+                {
+                    "job_progress_info": "Processing...",
+                }, merge=True
+            )
             if input_type == "T2V":
                 if add_video_control and control_video is not None:
                     output_frames, output_file_name = wan.run(video, mask, references=reference_images,
@@ -264,10 +301,14 @@ def on_submit(
                 output_frames, output_file_name = wan.run(video, mask, references=reference_images,
                                                           video_fps=16 if not add_video_control else output_fps)
                 # export full video
-
+            FirestoreFunctions.wanVideoJobsRef.document(WanVideoGenerator.JOB_ID).set(
+                {
+                    "job_progress_info": "Post processing...",
+                }, merge=True
+            )
             # post-process output frames
             # encode video for current iteration's output
-            _legacy_export_to_video(output_frames, output_file_name, fps=16 if not add_video_control else output_fps)
+            # _legacy_export_to_video(output_frames, output_file_name, fps=16 if not add_video_control else output_fps)
 
             # export full video by adding all output frames to all_video_frames and always discard first frame
             if len(all_video_frames) > 0:
@@ -387,6 +428,8 @@ def run(machine_id="OVERLORD4-0"):
         job_dict = started_job.to_dict()
         job_dict["id"] = started_job.id
 
+        WanVideoGenerator.JOB_ID = started_job.id
+
         firestoreFunctions.db.collection("wanServers").document(machine_id).set(
             {
                 "lastActiveTime": datetime.datetime.now(datetime.timezone.utc),
@@ -399,6 +442,11 @@ def run(machine_id="OVERLORD4-0"):
         wan_args = list(wan_args)  # convert tuple to list
 
         if wan is None or image_proc is None:
+            FirestoreFunctions.wanVideoJobsRef.document(WanVideoGenerator.JOB_ID).set(
+                {
+                    "job_progress_info": "Preparing models...",
+                }, merge=True
+            )
             wan, image_proc = setup_wan()
 
         wan_args.insert(0, wan)
@@ -449,6 +497,8 @@ def retrieve_from_firebase(job_doc_data):
         'height': height,
         'width': width,
         'runs': runs,
+        'seed': seed,
+        'conditioning_scale': conditioning_scale,
         'add_video_control': add_video_control,
         'control_type': control_type,
         'start_frame': start_frame,
@@ -471,6 +521,8 @@ def retrieve_from_firebase(job_doc_data):
     height = job_doc_data.get('height', 480)
     width = job_doc_data.get('width', 832)
     runs = job_doc_data.get('runs', 1)
+    seed = job_doc_data.get('seed', -1)
+    conditioning_scale = job_doc_data.get('conditioning_scale', 1.0)
 
     storage_paths = job_doc_data.get('storage_paths', {})
     print(f"storage_paths; {storage_paths}")
@@ -539,7 +591,7 @@ def retrieve_from_firebase(job_doc_data):
     # now we return all args in the same format as on_submit (we don't need firebase token here)
     return (None, user_id, input_type, prompt, num_frames, steps, flow_shift, height, width, runs,
             source_image, source_video, frame_image, slider_value,
-            add_video_control, control_video, start_frame, frame_skip, control_type, ref)
+            add_video_control, control_video, start_frame, frame_skip, control_type, ref, seed, conditioning_scale)
 
 
 if __name__ == "__main__":

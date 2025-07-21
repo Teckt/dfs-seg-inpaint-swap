@@ -160,6 +160,13 @@ def create_lora_params_from_prompt(prompt, open_bracket_idx, closed_bracket_idx)
 
 
 class WanVideoGenerator(VideoGenerator):
+
+    JOB_ID = ""
+    STEPS_MAX = 0
+    STEPS_CURRENT = 0
+    NUM_FRAMES_ITER = 0
+    NUM_FRAMES_MAX = 0
+
     def __init__(self, is_server=False, local_files_only=True, model="wan-480"):
         '''
 
@@ -198,29 +205,29 @@ class WanVideoGenerator(VideoGenerator):
 
 
         # original
-        if os.path.exists("D:\\huggingface\\models--Wan-AI--Wan2.1-I2V-14B-480P-Diffusers\\snapshots\\ba97433dcc621976ffdde384974f890f64190b18"):
-            with tqdm(desc="Loading original text_encoder from Wan-AI--Wan2.1-I2V-14B-480P-Diffusers"):
-                text_encoder = UMT5EncoderModel.from_pretrained(
-                    "D:\\huggingface\\models--Wan-AI--Wan2.1-I2V-14B-480P-Diffusers\\snapshots\\ba97433dcc621976ffdde384974f890f64190b18",
-                    subfolder="text_encoder",
-                    torch_dtype=torch.bfloat16
-                )
-        else:
-            text_encoder_path = "Anyfusion/umt5-xxl-encoder-fp8"
-            if "Anyfusion/" in text_encoder_path:
-                local_dir = text_encoder_path.replace("Anyfusion/", "")
-                if os.path.exists(os.path.join(local_dir, "diffusion_pytorch_model.safetensors")):
-                    text_encoder_path = local_dir
-            with tqdm(desc="Loading text_encoder"):
-                text_encoder = UMT5EncoderModel.from_pretrained(
-                    text_encoder_path,
-                    # model_id,
-                    # subfolder="text_encoder",
-                    # quantization_config=quant_config,
+        # if os.path.exists("D:\\huggingface\\models--Wan-AI--Wan2.1-I2V-14B-480P-Diffusers\\snapshots\\ba97433dcc621976ffdde384974f890f64190b18"):
+        #     with tqdm(desc="Loading original text_encoder from Wan-AI--Wan2.1-I2V-14B-480P-Diffusers"):
+        #         text_encoder = UMT5EncoderModel.from_pretrained(
+        #             "D:\\huggingface\\models--Wan-AI--Wan2.1-I2V-14B-480P-Diffusers\\snapshots\\ba97433dcc621976ffdde384974f890f64190b18",
+        #             subfolder="text_encoder",
+        #             torch_dtype=torch.bfloat16
+        #         )
+        # else:
+        text_encoder_path = "Anyfusion/umt5-xxl-encoder-fp8"
+        if "Anyfusion/" in text_encoder_path:
+            local_dir = text_encoder_path.replace("Anyfusion/", "")
+            if os.path.exists(os.path.join(local_dir, "diffusion_pytorch_model.safetensors")):
+                text_encoder_path = local_dir
+        with tqdm(desc="Loading text_encoder"):
+            text_encoder = UMT5EncoderModel.from_pretrained(
+                text_encoder_path,
+                # model_id,
+                # subfolder="text_encoder",
+                # quantization_config=quant_config,
 
-                    torch_dtype=torch.bfloat16
-                )
-                text_encoder.to(torch.bfloat16)
+                torch_dtype=torch.bfloat16
+            )
+            text_encoder.to(torch.bfloat16)
 
         with tqdm(desc="Loading transformer"):
             # DO NOT USE QUANTIZED 1.3B, OUTPUT IS JUST NOISE
@@ -271,23 +278,24 @@ class WanVideoGenerator(VideoGenerator):
         flow_shift = 3.0  # 5.0 for 720P, 3.0 for 480P
         self.pipe.scheduler = UniPCMultistepScheduler.from_config(self.pipe.scheduler.config, flow_shift=flow_shift)
 
-        self.pipe.enable_model_cpu_offload()
+        # self.pipe.enable_model_cpu_offload()
+
         # group-offloading
-        # onload_device = torch.device("cuda")
-        # offload_device = torch.device("cpu")
-        # apply_group_offloading(text_encoder,
-        #                        onload_device=onload_device,
-        #                        offload_device=offload_device,
-        #                        offload_type="block_level",
-        #                        num_blocks_per_group=4
-        #                        )
-        # transformer.enable_group_offload(
-        #     onload_device=onload_device,
-        #     offload_device=offload_device,
-        #     offload_type="leaf_level",
-        #     use_stream=True
-        # )
-        # self.pipe.to("cuda")
+        onload_device = torch.device("cuda")
+        offload_device = torch.device("cpu")
+        apply_group_offloading(text_encoder,
+                               onload_device=onload_device,
+                               offload_device=offload_device,
+                               offload_type="block_level",
+                               num_blocks_per_group=4
+                               )
+        transformer.enable_group_offload(
+            onload_device=onload_device,
+            offload_device=offload_device,
+            offload_type="leaf_level",
+            use_stream=True
+        )
+        self.pipe.to("cuda")
 
     @staticmethod
     def prepare_video_and_mask(frame_inserts: dict, height: int, width: int,
@@ -355,8 +363,13 @@ class WanVideoGenerator(VideoGenerator):
 
         if generator is not None:
             args["generator"] = generator
+
         flow_shift = self.settings.options.get("flow_shift", 2.0)
         self.pipe.scheduler = UniPCMultistepScheduler.from_config(self.pipe.scheduler.config, flow_shift=flow_shift)
+
+        callback_on_step_end = self.settings.options.get("callback_on_step_end", None)
+        if callback_on_step_end:
+            args["callback_on_step_end"] = callback_on_step_end
 
         video = self.pipe(
             **args,
