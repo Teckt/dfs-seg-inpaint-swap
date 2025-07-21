@@ -222,16 +222,17 @@ def make_tab(input_type):
             with gr.Column():
                 # Universal options
                 prompt = gr.Textbox(label="Prompt", placeholder="Enter your prompt here", lines=4)
-                if input_type == "LF2V":
-                    num_frames = gr.Number(label="Num Frames (0 to process whole control video in 80 frame chunks)",
-                                           value=80, precision=0, interactive=True, minimum=0, step=16)
-                else:
-                    num_frames = gr.Number(label="Num Frames",
-                                           value=80, precision=0, interactive=True, minimum=0, step=16)
+                with gr.Row():
+                    if input_type == "LF2V":
+                        num_frames = gr.Number(label="Num Frames (0 to process whole control video in 80 frame chunks)",
+                                            value=80, precision=0, interactive=True, minimum=0, step=16)
+                    else:
+                        num_frames = gr.Number(label="Num Frames",
+                                            value=80, precision=0, interactive=True, minimum=0, step=16)
 
-                steps = gr.Number(label="Steps", value=4, precision=0, interactive=True, minimum=4, maximum=8)
+                    steps = gr.Number(label="Steps", value=4, precision=0, interactive=True, minimum=4, maximum=8)
                 flow_shift = gr.Number(label="Flow Shift", value=2.0, precision=1, interactive=True, minimum=1.0,
-                                       maximum=5.0, step=0.1)
+                                    maximum=5.0, step=0.1)
 
                 if input_type == "I2V":
                     gr.Markdown("### Output will be scaled to HxW using aspect ratio of source image")
@@ -240,10 +241,23 @@ def make_tab(input_type):
 
                 # put height and width here if t2v only; otherwise will be under source image/video
                 if input_type == "T2V":
-                    height = gr.Number(label="Height", value=480, precision=0, interactive=True, minimum=240,
-                                       maximum=896, step=16)
-                    width = gr.Number(label="Width", value=832, precision=0, interactive=True, minimum=240, maximum=896,
-                                      step=16)
+                    with gr.Row():
+                        height = gr.Number(label="Height", value=480, precision=0, interactive=True, minimum=240,
+                                        maximum=896, step=16)
+                        width = gr.Number(label="Width", value=832, precision=0, interactive=True, minimum=240, maximum=896,
+                                        step=16)
+
+                conditioning_scale_input = gr.Number(label="Strength (For reference images, I2V, and LF2V and Control Video)", value=1.0, precision=1, interactive=True,
+                                               minimum=0.0, maximum=1.0, step=0.1)
+                with gr.Row():
+                    seed_checkbox = gr.Checkbox(label="Use Random Seed", value=True, interactive=True)
+                    seed_input = gr.Number(label="Seed", value=-1, precision=0, interactive=True, minimum=-1, maximum=4294967294, visible=False)
+
+                seed_checkbox.change(
+                    lambda v: gr.update(visible=True, value=int(random.randrange(4294967294))) if not v else gr.update(visible=False, value=-1),
+                    inputs=seed_checkbox,
+                    outputs=[seed_input]
+                )
 
                 # Reference images
                 gr.Markdown("### Reference Images (up to 4)")
@@ -268,17 +282,7 @@ def make_tab(input_type):
                     outputs=[*ref_image_boxes, ref_visible]
                 )
 
-                conditioning_scale_input = gr.Number(label="Strength (For reference images, I2V, and LF2V and Control Video)", value=1.0, precision=1, interactive=True,
-                                               minimum=0.0, maximum=1.0, step=0.1)
 
-                seed_checkbox = gr.Checkbox(label="Use Random Seed", value=True, interactive=True)
-                seed_input = gr.Number(label="Seed", value=-1, precision=0, interactive=True, minimum=-1, maximum=4294967294, visible=False)
-
-                seed_checkbox.change(
-                    lambda v: gr.update(visible=True, value=int(random.randrange(4294967294))) if v else gr.update(visible=False, value=-1),
-                    inputs=seed_checkbox,
-                    outputs=[seed_input]
-                )
 
                 # Source image or video
 
@@ -297,11 +301,11 @@ def make_tab(input_type):
 
                 # Height and Width for I2V and LF2V
                 if input_type in ["I2V", "LF2V"]:
-
-                    height = gr.Number(label="Height", value=480, precision=0, interactive=True, minimum=240,
-                                       maximum=920, step=16)
-                    width = gr.Number(label="Width", value=832, precision=0, interactive=True, minimum=240, maximum=920,
-                                      step=16)
+                    with gr.Row():
+                        height = gr.Number(label="Height", value=480, precision=0, interactive=True, minimum=240,
+                                        maximum=920, step=16)
+                        width = gr.Number(label="Width", value=832, precision=0, interactive=True, minimum=240, maximum=920,
+                                        step=16)
                     output_size_display = gr.Markdown("Output Size: -")
                     height.change(
                         calculate_output_size,
@@ -337,12 +341,8 @@ def make_tab(input_type):
                 add_video_control = gr.Checkbox(label="Add Control Video", value=False)
                 with gr.Row(visible=False) as video_control_options:
                     with gr.Column():
+
                         control_video = gr.Video(label="Control Video")
-                    with gr.Column():
-                        start_frame = gr.Number(label="Start Control Frame", value=0, precision=0, interactive=True,
-                                                minimum=0)
-                        frame_skip = gr.Number(label="Frame Skip", value=0, precision=0, interactive=True, minimum=0,
-                                               maximum=3)
                         control_type = gr.Dropdown(
                             label="Control Type",
                             choices=["Full Pose", "Person Mask", "Clothing Mask", "Face Mask", "Background Mask",
@@ -350,6 +350,12 @@ def make_tab(input_type):
                             value="Full Pose",
                             interactive=True
                         )
+                        with gr.Row():
+                            start_frame = gr.Number(label="Start Control Frame", value=0, precision=0, interactive=True,
+                                                    minimum=0)
+                            frame_skip = gr.Number(label="Frame Skip", value=0, precision=0, interactive=True, minimum=0,
+                                                maximum=3)
+
                 add_video_control.change(
                     lambda v: gr.update(visible=v),
                     inputs=add_video_control,
@@ -399,9 +405,9 @@ def on_submit_t2v(
         firebase_token, firebase_uid, prompt, num_frames, steps, flow_shift, height, width, runs,
         source_image=None, source_video=None, frame_image=None, slider_value=None,
         add_video_control=False, control_video=None, start_frame=0, frame_skip=0, control_type="Full Pose",
-        *ref_image_boxes, conditioning_scale=1.0, seed=-1
+        ref_0=None, ref_1=None, ref_2=None, ref_3=None, conditioning_scale=1.0, seed=-1
 ):
-    # ignore source image and video inputs for T2V
+    ref_image_boxes = [ref_0, ref_1, ref_2, ref_3]
     return on_submit(
         firebase_token, firebase_uid, "T2V", prompt, num_frames, steps, flow_shift, height, width, runs,
         source_image=None, source_video=None, frame_image=None, slider_value=None,
@@ -415,8 +421,9 @@ def on_submit_i2v(
         firebase_token, firebase_uid, prompt, num_frames, steps, flow_shift, height, width, runs,
         source_image=None, source_video=None, frame_image=None, slider_value=None,
         add_video_control=False, control_video=None, start_frame=0, frame_skip=0, control_type="Full Pose",
-        *ref_image_boxes, conditioning_scale=1.0, seed=-1
+        ref_0=None, ref_1=None, ref_2=None, ref_3=None, conditioning_scale=1.0, seed=-1
 ):
+    ref_image_boxes = [ref_0, ref_1, ref_2, ref_3]
     return on_submit(
         firebase_token, firebase_uid, "I2V", prompt, num_frames, steps, flow_shift, height, width, runs,
         source_image=source_image, source_video=None, frame_image=None, slider_value=None,
@@ -430,8 +437,9 @@ def on_submit_lf2v(
         firebase_token, firebase_uid, prompt, num_frames, steps, flow_shift, height, width, runs,
         source_image=None, source_video=None, frame_image=None, slider_value=None,
         add_video_control=False, control_video=None, start_frame=0, frame_skip=0, control_type="Full Pose",
-        *ref_image_boxes, conditioning_scale=1.0, seed=-1
+        ref_0=None, ref_1=None, ref_2=None, ref_3=None, conditioning_scale=1.0, seed=-1
 ):
+    ref_image_boxes = [ref_0, ref_1, ref_2, ref_3]
     return on_submit(
         firebase_token, firebase_uid, "LF2V", prompt, num_frames, steps, flow_shift, height, width, runs,
         source_image=None, source_video=source_video, frame_image=frame_image, slider_value=slider_value,
