@@ -1,4 +1,5 @@
 import os
+import random
 import time
 import PIL
 import huggingface_hub
@@ -21,6 +22,7 @@ from diffusers import BitsAndBytesConfig
 from ultralytics import YOLO
 
 from cog import run_ffmpeg_optical_flow, VideoGenerator
+from dfs_seg_inpaint_swap.fire_functions import FirestoreFunctions
 from tf_free_functions import paste_swapped_image, paste_image_with_mask
 from redresser_utils import RedresserSettings, yolo8_extract_faces, ImageResizeParams, yolo_segment_image
 from CONSTANTS import *
@@ -326,7 +328,12 @@ class WanVideoGenerator(VideoGenerator):
 
         seed = int(self.settings.options.get("seed", -1))
         if seed is None or seed < 0:
-            seed = int(time.time())
+            seed = int(random.randrange(4294967294))
+            FirestoreFunctions.wanVideoJobsRef.document(WanVideoGenerator.JOB_ID).set(
+                {
+                    "random_seed": seed,
+                }, merge=True
+            )
 
         print("seed", seed)
         generator = torch.Generator().manual_seed(seed)

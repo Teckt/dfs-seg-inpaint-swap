@@ -773,7 +773,7 @@ def copy_settings(job_id):
             gr.update(value=control_type),
             *[gr.update(img, visible=True) if img is not None else gr.skip() for img in ref_images],
             gr.update(value=conditioning_scale),
-            gr.update(value=seed, visible=True),
+            gr.skip(),  # skip seed
 
             *empty_tab_outputs,
             *empty_tab_outputs,
@@ -802,7 +802,7 @@ def copy_settings(job_id):
             gr.update(value=control_type),
             *[gr.update(img, visible=True) if img is not None else gr.skip() for img in ref_images],
             gr.update(value=conditioning_scale),
-            gr.update(value=seed, visible=True),
+            gr.skip(),  # skip seed
 
             *empty_tab_outputs,
 
@@ -831,7 +831,7 @@ def copy_settings(job_id):
             gr.update(value=control_type),
             *[gr.update(img, visible=True) if img is not None else gr.skip() for img in ref_images],
             gr.update(value=conditioning_scale),
-            gr.update(value=seed, visible=True),
+            gr.skip(),  # skip seed
 
             gr.Tabs(selected=2)  # switches tab to LF2V
         )
@@ -896,7 +896,7 @@ def copy_to_lf2v(job_id):
         gr.update(value=control_type),
         *[gr.update(img, visible=True) if img is not None else gr.skip() for img in ref_images],
         gr.update(value=conditioning_scale),
-        gr.update(value=seed, visible=True),
+        gr.skip(),  # skip seed
 
         gr.Tabs(selected=2)  # switches tab to LF2V
     )
@@ -943,6 +943,11 @@ def generate_card_data(job):
     elif job_status == "queued":
         md += f"\n`Queued` - `{queuedTime}`"
 
+    seed = job.get('seed', -1)
+    if seed == -1:
+        # a generated seed from the backend
+        seed = job.get("random_seed", -1)
+
     meta_string = f"""
                                     - **Job ID**: `{job_id}`
                                     - **Queued**: {queuedTime}
@@ -950,10 +955,9 @@ def generate_card_data(job):
                                     - **Num Frames**: {job.get('num_frames')}
                                     - **Steps**: {job.get('steps')}
                                     - **Dims**: {job.get('width')}×{job.get('height')}
-                                    - **Strength**: {job.get('conditioning_scale', 0.6):.1f}
                                     - **Flow Shift**: {job.get('flow_shift'):.1f}
                                     - **Strength**: {job.get('conditioning_scale', 1.0):.1f}
-                                    - **Seed**: {job.get('seed', -1)}
+                                    - **Seed**: {seed}
                                     """
 
     # Download reference images
