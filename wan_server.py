@@ -102,6 +102,8 @@ def on_submit(
     wan.settings.options["callback_on_step_end"] = update_progress
 
     # wan needs 16 + 1 frames minimum, so we add 1 to num_frames; also we discard the first frame; chunks are always 81 but we discard the first one; users don't need to know this so igts just 80
+    if num_frames <= 0:
+        num_frames = 80  # default to 80 frames if num_frames is 0 or negative
     total_num_frames = num_frames + 1
 
     chunk_size = 32
