@@ -12,9 +12,9 @@ when selecting a video, the
 '''
 
 from diffusers.utils.export_utils import _legacy_export_to_video
-from dfs_seg_inpaint_swap.redresser_utils import RedresserSettings
-from dfs_seg_inpaint_swap.wan import VideoAnnotator, WanVideoGenerator, WanSettings
-from dfs_seg_inpaint_swap.fire_functions import FirestoreFunctions
+from redresser_utils import RedresserSettings
+from wan import VideoAnnotator, WanVideoGenerator, WanSettings
+from fire_functions import FirestoreFunctions
 import gradio as gr
 import cv2
 import numpy as np
@@ -587,7 +587,7 @@ def submit_to_firebase(
 PAGE_SIZE = 10
 
 
-def fetch_jobs(firebase_uid, firebase_token, page, raw=False):
+def fetch_jobs(firebase_uid, firebase_token, page=0, raw=False):
 
     # Authenticate user
     # authenticated, response_message = FirestoreFunctions.authenticate_user(firebase_token, firebase_uid)
@@ -601,6 +601,10 @@ def fetch_jobs(firebase_uid, firebase_token, page, raw=False):
     docs = query.get()
     rows = []
     if raw:
+        # for doc in docs:
+        #     queuedTime = int(data.get("queuedTime", 0)) if data.get("queuedTime") else 0
+        #     human_time = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(queuedTime))
+        #     print(f"Job ID: {doc.id}, Queued Time: {human_time}")
         return docs
 
     for doc in docs:
@@ -969,12 +973,15 @@ def generate_card_data(job):
             ref_image_path = download_reference_image(firebase_uid.value, job_id, idx)
             ref_images[idx] = ref_image_path
 
-    if job.get('add_control_video'):
+    add_video_control = job.get('add_video_control')
+
+    if add_video_control:
         meta_string += f"- **Control Type**: {job.get('control_type')}\n"
         meta_string += f"- **Control Frame Index**: {job.get('start_frame')}\n"
         meta_string += f"- **Control Frame Skip**: {job.get('frame_skip')}\n"
 
         control_video_path = download_control_video(firebase_uid.value, job_id)
+
     else:
         control_video_path = None
 
@@ -1025,7 +1032,7 @@ def refresh_cards(uid, token, page, *original_job_states, queued_only=False):
 
             original_job_id = original_job_id_states[idx]
             original_job_status = original_job_status_states[idx]
-            if job.id != original_job_id or  job_status != original_job_status or not queued_only or job_status in ('queued', 'started'):
+            if job.id != original_job_id or job_status != original_job_status or not queued_only or job_status in ('queued', 'started'):
                 card_data = generate_card_data(job)
                 md, meta_string, result_video_path, ref_image_paths, source_image_path, source_video_path, control_video_path, job_progress_info, job_progress = card_data
 

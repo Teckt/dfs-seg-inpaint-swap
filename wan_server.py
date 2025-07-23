@@ -322,8 +322,12 @@ def on_submit(
 
             print(f"All video frames length: {len(all_video_frames)}, Output frames length: {len(output_frames)}")
 
-            _legacy_export_to_video(all_video_frames, output_file_name + "_wan_full.mp4",
-                                    fps=16 if not add_video_control else output_fps)
+            if add_video_control and control_video is not None:
+                _legacy_export_to_video(all_video_frames, output_file_name + "_wan_full.mp4",
+                                        fps=output_fps)
+            else:
+                _legacy_export_to_video(all_video_frames, output_file_name + "_wan_full.mp4",
+                                        fps=16)
             # run_ffmpeg_optical_flow(input_video=video_path+"_wan_full.mp4", output_video=video_path+"_wan_full_opt.mp4", fps=int(video_fps/(frame_skip+1) * 2))
 
             if reached_end_of_video:
