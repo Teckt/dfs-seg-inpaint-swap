@@ -280,23 +280,23 @@ class WanVideoGenerator(VideoGenerator):
         flow_shift = 3.0  # 5.0 for 720P, 3.0 for 480P
         self.pipe.scheduler = UniPCMultistepScheduler.from_config(self.pipe.scheduler.config, flow_shift=flow_shift)
 
-        # self.pipe.enable_model_cpu_offload()
+        self.pipe.enable_model_cpu_offload()
 
         # group-offloading
-        onload_device = torch.device("cuda")
-        offload_device = torch.device("cpu")
-        apply_group_offloading(text_encoder,
-                               onload_device=onload_device,
-                               offload_device=offload_device,
-                               offload_type="block_level",
-                               num_blocks_per_group=4
-                               )
-        transformer.enable_group_offload(
-            onload_device=onload_device,
-            offload_device=offload_device,
-            offload_type="leaf_level",
-            use_stream=True
-        )
+        # onload_device = torch.device("cuda")
+        # offload_device = torch.device("cpu")
+        # apply_group_offloading(text_encoder,
+        #                        onload_device=onload_device,
+        #                        offload_device=offload_device,
+        #                        offload_type="block_level",
+        #                        num_blocks_per_group=4
+        #                        )
+        # transformer.enable_group_offload(
+        #     onload_device=onload_device,
+        #     offload_device=offload_device,
+        #     offload_type="leaf_level",
+        #     use_stream=True
+        # )
         # self.pipe.to("cuda")
 
     @staticmethod
