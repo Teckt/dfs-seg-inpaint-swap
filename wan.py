@@ -297,7 +297,7 @@ class WanVideoGenerator(VideoGenerator):
             offload_type="leaf_level",
             use_stream=True
         )
-        self.pipe.to("cuda")
+        # self.pipe.to("cuda")
 
     @staticmethod
     def prepare_video_and_mask(frame_inserts: dict, height: int, width: int,
